@@ -10,41 +10,51 @@
     <div class="container mt-5">
         <h1 class="text-center">Owner Dashboard</h1>
         <hr>
-        
-        <!-- Submitted Report Section -->
-        <div class="mb-5">
-            <h3>Submitted Report</h3>
-            <div class="card p-3">
-                <h5>Report Page: Dashboard</h5>
-                <p>Low Stock Items: <span id="lowStockCount">0</span></p>
-                <button class="btn btn-primary" onclick="viewSubmittedReport()">View Submitted Report</button>
-            </div>
-        </div>
-
-        <!-- Checklist Section -->
-        <div class="mb-5">
-            <h3>Checklist Submission</h3>
-            <form id="checklistForm" class="card p-3">
-                <div class="mb-3">
-                    <label for="itemName" class="form-label">Item Name</label>
-                    <input type="text" class="form-control" id="itemName" placeholder="Enter item name" required>
-                </div>
-                <div class="mb-3">
-                    <label for="itemQuantity" class="form-label">Quantity</label>
-                    <input type="number" class="form-control" id="itemQuantity" placeholder="Enter quantity" required>
-                </div>
-                <button type="submit" class="btn btn-success w-100">Submit</button>
-            </form>
-        </div>
 
         <!-- Stock Status Setup Section -->
         <div>
             <h3>Stock Status Setup</h3>
-            <div class="list-group">
-                <button class="list-group-item list-group-item-action" onclick="addItem()">Add Item</button>
-                <button class="list-group-item list-group-item-action" onclick="editItems()">Edit Items</button>
-                <button class="list-group-item list-group-item-action" onclick="editCategory()">Edit Category</button>
-                <button class="list-group-item list-group-item-action" onclick="setStockLevel()">Set In-Stock Level</button>
+            <div class="list-group mb-3">
+                <button class="list-group-item list-group-item-action" onclick="showAddItemForm()">Add Item</button>
+            </div>
+            <div id="addItemForm" class="card p-3 d-none">
+                <h4>Add New Item</h4>
+                <form id="newItemForm">
+                    <div class="mb-3">
+                        <label for="newItemName" class="form-label">Item Name</label>
+                        <input type="text" class="form-control" id="newItemName" placeholder="Enter item name" required>
+                    </div>
+                    <div class="mb-3">
+                        <label for="newItemCategory" class="form-label">Category</label>
+                        <input type="text" class="form-control" id="newItemCategory" placeholder="Enter category" required>
+                    </div>
+                    <div class="mb-3">
+                        <label for="newItemStockLevel" class="form-label">In-Stock Level</label>
+                        <input type="number" class="form-control" id="newItemStockLevel" placeholder="Enter in-stock level" required>
+                    </div>
+                    <div class="mb-3">
+                        <label for="newItemReorderLevel" class="form-label">Reorder Level</label>
+                        <input type="number" class="form-control" id="newItemReorderLevel" placeholder="Enter reorder level" required>
+                    </div>
+                    <button type="submit" class="btn btn-success w-100">Save Item</button>
+                </form>
+            </div>
+            <div id="itemList" class="mt-5">
+                <h4>Item List</h4>
+                <table class="table table-striped">
+                    <thead>
+                        <tr>
+                            <th>ID</th>
+                            <th>Name</th>
+                            <th>Category</th>
+                            <th>In-Stock Level</th>
+                            <th>Reorder Level</th>
+                        </tr>
+                    </thead>
+                    <tbody id="itemTableBody">
+                        <!-- Items will be added here dynamically -->
+                    </tbody>
+                </table>
             </div>
         </div>
 
@@ -52,43 +62,49 @@
         <div class="mt-5 text-center">
             <a href="/" class="btn btn-danger">Exit</a>
         </div>
-
     </div>
 
     <script>
-        // Functions for Submitted Report
-        function viewSubmittedReport() {
-            alert("Viewing Submitted Report functionality is not implemented yet.");
+        let itemIdCounter = 1; // Counter for generating unique IDs
+        const itemTableBody = document.getElementById('itemTableBody');
+
+        function showAddItemForm() {
+            const form = document.getElementById('addItemForm');
+            form.classList.remove('d-none');
         }
 
-        // Checklist Submission Logic
-        document.getElementById('checklistForm').addEventListener('submit', function(e) {
+        document.getElementById('newItemForm').addEventListener('submit', function(e) {
             e.preventDefault();
-            const itemName = document.getElementById('itemName').value;
-            const itemQuantity = document.getElementById('itemQuantity').value;
 
-            alert(`Item "${itemName}" with quantity "${itemQuantity}" has been submitted successfully!`);
+            const itemName = document.getElementById('newItemName').value;
+            const itemCategory = document.getElementById('newItemCategory').value;
+            const inStockLevel = parseInt(document.getElementById('newItemStockLevel').value);
+            const reorderLevel = parseInt(document.getElementById('newItemReorderLevel').value);
 
-            // Clear the form after submission
-            document.getElementById('checklistForm').reset();
+            if (isNaN(inStockLevel) || isNaN(reorderLevel)) {
+                alert("In-Stock Level and Reorder Level must be integers.");
+                return;
+            }
+
+            const newItemId = itemIdCounter++;
+
+            // Add new item to the table
+            const row = document.createElement('tr');
+            row.innerHTML = `
+                <td>${newItemId}</td>
+                <td>${itemName}</td>
+                <td>${itemCategory}</td>
+                <td>${inStockLevel}</td>
+                <td>${reorderLevel}</td>
+            `;
+            itemTableBody.appendChild(row);
+
+            alert(`Item Added!\nID: ${newItemId}\nName: ${itemName}\nCategory: ${itemCategory}\nIn-Stock Level: ${inStockLevel}\nReorder Level: ${reorderLevel}`);
+
+            // Reset form
+            document.getElementById('newItemForm').reset();
+            document.getElementById('addItemForm').classList.add('d-none');
         });
-
-        // Functions for Stock Status Setup
-        function addItem() {
-            alert("Add Item functionality is not implemented yet.");
-        }
-
-        function editItems() {
-            alert("Edit Items functionality is not implemented yet.");
-        }
-
-        function editCategory() {
-            alert("Edit Category functionality is not implemented yet.");
-        }
-
-        function setStockLevel() {
-            alert("Set In-Stock Level functionality is not implemented yet.");
-        }
     </script>
 </body>
 </html>
