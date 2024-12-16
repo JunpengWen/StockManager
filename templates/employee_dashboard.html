@@ -16,8 +16,8 @@
             <h3>Checklist Submission</h3>
             <form id="checklistForm" class="card p-3">
                 <div class="mb-3">
-                    <label for="itemName" class="form-label">Item Name</label>
-                    <input type="text" class="form-control" id="itemName" placeholder="Enter item name" required>
+                    <label for="itemNameDropdown" class="form-label">Item Name</label>
+                    <select class="form-control" id="itemNameDropdown" required></select>
                 </div>
                 <div class="mb-3">
                     <label for="itemQuantity" class="form-label">Quantity</label>
@@ -27,34 +27,41 @@
             </form>
         </div>
 
-        <div id="itemList" class="mt-5">
-            <h4>Item List</h4>
+        <!-- Restock Section -->
+        <div class="mb-5">
+            <h3>Restock Items</h3>
+            <form id="restockForm" class="card p-3">
+                <div class="mb-3">
+                    <label for="restockItemDropdown" class="form-label">Select Item</label>
+                    <select class="form-control" id="restockItemDropdown" required></select>
+                </div>
+                <div class="mb-3">
+                    <label for="restockQuantity" class="form-label">Restock Quantity</label>
+                    <input type="number" class="form-control" id="restockQuantity" placeholder="Enter restock quantity" required>
+                </div>
+                <button type="submit" class="btn btn-primary w-100">Restock</button>
+            </form>
+        </div>
+
+        <!-- Inventory Audit Section -->
+        <div class="mt-5">
+            <h3>Daily Inventory Check</h3>
             <table class="table table-striped">
                 <thead>
                     <tr>
                         <th>ID</th>
                         <th>Name</th>
                         <th>Category</th>
-                        <th>Max Stock Level</th>
-                        <th>In-Stock Level</th>
-                        <th>Reorder Level</th>
+                        <th>Current Stock</th>
+                        <th>Corrected Stock</th>
+                        <th>Actions</th>
                     </tr>
                 </thead>
-                <tbody>
-                    {% for item in items %}
-                    <tr>
-                        <td>{{ item[0] }}</td>
-                        <td>{{ item[1] }}</td>
-                        <td>{{ item[2] }}</td>
-                        <td>{{ item[3] }}</td>
-                        <td>{{ item[4] }}</td>
-                        <td>{{ item[5] }}</td>
-                    </tr>
-                    {% endfor %}
+                <tbody id="auditTableBody">
+                    <!-- Dynamically populated -->
                 </tbody>
             </table>
         </div>
-
 
         <!-- Exit Section -->
         <div class="mt-5 text-center">
@@ -63,19 +70,133 @@
     </div>
 
     <script>
-        // Checklist Submission Logic
-        document.getElementById('checklistForm').addEventListener('submit', function(e) {
-            e.preventDefault();
+        // Fetch items and populate dropdowns and tables
+        async function fetchItems() {
+            const response = await fetch('/items');
+            const items = await response.json();
 
-            const itemName = document.getElementById('itemName').value;
-            const itemQuantity = document.getElementById('itemQuantity').value;
+            // Populate dropdowns for checklist and restock
+            const dropdowns = [document.getElementById('itemNameDropdown'), document.getElementById('restockItemDropdown')];
+            dropdowns.forEach(dropdown => {
+                dropdown.innerHTML = '';
+                items.forEach(item => {
+                    const option = document.createElement('option');
+                    option.value = item.name;
+                    option.textContent = `${item.name} (Available: ${item.in_stock_level})`;
+                    dropdown.appendChild(option);
+                });
+            });
+
+            // Populate inventory audit table
+            const auditTableBody = document.getElementById('auditTableBody');
+            auditTableBody.innerHTML = '';
+            items.forEach(item => {
+                const row = `
+                    <tr>
+                        <td>${item.id}</td>
+                        <td>${item.name}</td>
+                        <td>${item.category}</td>
+                        <td id="currentStock_${item.id}">${item.in_stock_level}</td>
+                        <td>
+                            <input type="number" id="correctedStock_${item.id}" class="form-control form-control-sm"
+                                placeholder="Enter corrected stock" value="${item.in_stock_level}">
+                        </td>
+                        <td>
+                            <button class="btn btn-primary btn-sm" onclick="updateStock(${item.id})">Update</button>
+                        </td>
+                    </tr>
+                `;
+                auditTableBody.insertAdjacentHTML('beforeend', row);
+            });
+        }
+
+        // Handle checklist submission
+        async function submitChecklist(itemName, itemQuantity) {
+            const response = await fetch('/items');
+            const items = await response.json();
+            const item = items.find(i => i.name === itemName);
+
+            if (!item) {
+                alert(`Item "${itemName}" does not exist.`);
+                return;
+            }
+
+            if (itemQuantity > item.in_stock_level) {
+                alert(`Insufficient stock for "${itemName}". Available: ${item.in_stock_level}.`);
+                return;
+            }
 
             alert(`Item "${itemName}" with quantity "${itemQuantity}" has been submitted successfully!`);
+            await fetch(`/update_stock/${item.id}`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ in_stock_level: item.in_stock_level - itemQuantity }),
+            });
 
-            // Clear the form after submission
             document.getElementById('checklistForm').reset();
+            await fetchItems(); // Refresh item list
+        }
+
+        // Handle restock submission
+        async function restockItem(itemName, restockQuantity) {
+            const response = await fetch('/items');
+            const items = await response.json();
+            const item = items.find(i => i.name === itemName);
+
+            if (!item) {
+                alert(`Item "${itemName}" does not exist.`);
+                return;
+            }
+
+            alert(`Restocked "${itemName}" with quantity "${restockQuantity}" successfully!`);
+            await fetch(`/update_stock/${item.id}`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ in_stock_level: item.in_stock_level + restockQuantity }),
+            });
+
+            document.getElementById('restockForm').reset();
+            await fetchItems(); // Refresh item list
+        }
+
+        // Handle inventory audit updates
+        async function updateStock(itemId) {
+            const correctedStock = parseInt(document.getElementById(`correctedStock_${itemId}`).value);
+
+            if (correctedStock < 0) {
+                alert("Stock quantity cannot be negative.");
+                return;
+            }
+
+            await fetch(`/update_stock/${itemId}`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ in_stock_level: correctedStock }),
+            });
+
+            alert(`Stock updated successfully!`);
+            await fetchItems(); // Refresh audit table
+        }
+
+        // Form submission events
+        document.getElementById('checklistForm').addEventListener('submit', function(e) {
+            e.preventDefault();
+            const itemName = document.getElementById('itemNameDropdown').value;
+            const itemQuantity = parseInt(document.getElementById('itemQuantity').value);
+            submitChecklist(itemName, itemQuantity);
+        });
+
+        document.getElementById('restockForm').addEventListener('submit', function(e) {
+            e.preventDefault();
+            const itemName = document.getElementById('restockItemDropdown').value;
+            const restockQuantity = parseInt(document.getElementById('restockQuantity').value);
+            restockItem(itemName, restockQuantity);
+        });
+
+        // Initialize
+        document.addEventListener('DOMContentLoaded', () => {
+            fetchItems(); // Load data on page load
         });
     </script>
 </body>
 </html>
-

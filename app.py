@@ -136,6 +136,19 @@ def delete_item(item_id):
         conn.commit()
     return jsonify({'message': f'Item with ID {item_id} has been deleted.'}), 200
 
+# Route for updating stock level
+@app.route('/update_stock/<int:item_id>', methods=['POST'])
+def update_stock(item_id):
+    new_stock_level = request.json.get('in_stock_level')
+    if new_stock_level is None or new_stock_level < 0:
+        return jsonify({'message': 'Invalid stock level.'}), 400
+
+    with get_db_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute('UPDATE items SET in_stock_level = ? WHERE id = ?', (new_stock_level, item_id))
+        conn.commit()
+        print(f"Stock level updated for item ID {item_id} to {new_stock_level}")
+    return jsonify({'message': f'Item {item_id} stock level updated successfully.'}), 200
 
 if __name__ == '__main__':
     app.run(debug=True)

@@ -67,15 +67,13 @@
                     <th>Max Stock Level</th>
                     <th>In-Stock Level</th>
                     <th>Reorder Level</th>
-                    <th>Actions</th> <!-- New column -->
+                    <th>Actions</th>
                 </tr>
             </thead>
             <tbody id="itemTableBody">
                 <!-- Dynamic rows will be added here -->
             </tbody>
         </table>
-
-
 
         <!-- Exit Section -->
         <div class="mt-5 text-center">
@@ -99,7 +97,6 @@
                 categoryDropdown.appendChild(option);
             });
 
-            // Populate textarea in Edit Category Form
             document.getElementById('categoriesList').value = categories.join('\n');
         }
 
@@ -109,22 +106,20 @@
 
             const response = await fetch('/categories', {
                 method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                },
+                headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ categories }),
             });
 
             if (response.ok) {
                 alert('Categories updated successfully!');
-                fetchCategories(); // Refresh dropdown
+                fetchCategories();
                 showAddItemForm();
             } else {
-                alert('Failed to save categories. Please try again.');
+                alert('Failed to save categories.');
             }
         }
 
-        // Fetch items from the server and populate the item list
+        // Fetch items and populate the table
         async function fetchItems() {
             const response = await fetch('/items');
             const items = await response.json();
@@ -139,9 +134,12 @@
                     <td>${item.name}</td>
                     <td>${item.category}</td>
                     <td>${item.max_stock_level}</td>
-                    <td>${item.in_stock_level}</td>
+                    <td>
+                        <input type="number" id="stock_${item.id}" value="${item.in_stock_level}" class="form-control form-control-sm">
+                    </td>
                     <td>${item.reorder_level}</td>
                     <td>
+                        <button class="btn btn-primary btn-sm" onclick="updateStock(${item.id})">Update Stock</button>
                         <button class="btn btn-danger btn-sm" onclick="deleteItem(${item.id})">Delete</button>
                     </td>
                 `;
@@ -149,26 +147,42 @@
             });
         }
 
-        // Initialize on page load
-        fetchCategories();
-        fetchItems();
+        // Update stock level
+        async function updateStock(itemId) {
+            const newStockLevel = document.getElementById(`stock_${itemId}`).value;
 
+            if (newStockLevel < 0) {
+                alert('Stock level cannot be negative.');
+                return;
+            }
 
-        async function deleteItem(itemId) {
-            if (confirm('Are you sure you want to delete this item?')) {
-                const response = await fetch(`/delete_item/${itemId}`, {
-                    method: 'POST'
-                });
+            const response = await fetch(`/update_stock/${itemId}`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ in_stock_level: parseInt(newStockLevel) }),
+            });
 
-                if (response.ok) {
-                    alert('Item deleted successfully!');
-                    fetchItems(); // Refresh the item list
-                } else {
-                    alert('Failed to delete the item. Please try again.');
-                }
+            if (response.ok) {
+                alert('Stock updated successfully!');
+                fetchItems();
+            } else {
+                alert('Failed to update stock.');
             }
         }
 
+        // Delete item
+        async function deleteItem(itemId) {
+            if (confirm('Are you sure you want to delete this item?')) {
+                const response = await fetch(`/delete_item/${itemId}`, { method: 'POST' });
+
+                if (response.ok) {
+                    alert('Item deleted successfully!');
+                    fetchItems();
+                } else {
+                    alert('Failed to delete item.');
+                }
+            }
+        }
 
         // Toggle forms
         function showAddItemForm() {
@@ -181,8 +195,9 @@
             document.getElementById('addItemForm').classList.add('d-none');
         }
 
-        // Initialize on page load
+        // Initialize
         fetchCategories();
+        fetchItems();
     </script>
 </body>
 </html>
