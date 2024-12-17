@@ -136,19 +136,61 @@ def delete_item(item_id):
         conn.commit()
     return jsonify({'message': f'Item with ID {item_id} has been deleted.'}), 200
 
-# Route for updating stock level
-@app.route('/update_stock/<int:item_id>', methods=['POST'])
-def update_stock(item_id):
-    new_stock_level = request.json.get('in_stock_level')
-    if new_stock_level is None or new_stock_level < 0:
-        return jsonify({'message': 'Invalid stock level.'}), 400
+@app.route('/update_item/<int:item_id>', methods=['POST'])
+def update_item(item_id):
+    data = request.json
+    category = data.get('category')
+    max_stock_level = data.get('max_stock_level')
+    in_stock_level = data.get('in_stock_level')
+    reorder_level = data.get('reorder_level')
+
+    if not all(isinstance(val, (int, str)) for val in [category, max_stock_level, in_stock_level, reorder_level]):
+        return jsonify({'message': 'Invalid input values.'}), 400
 
     with get_db_connection() as conn:
         cursor = conn.cursor()
+        cursor.execute(
+            '''
+            UPDATE items 
+            SET category = ?, max_stock_level = ?, in_stock_level = ?, reorder_level = ?
+            WHERE id = ?
+            ''',
+            (category, max_stock_level, in_stock_level, reorder_level, item_id)
+        )
+        conn.commit()
+
+    return jsonify({'message': 'Item updated successfully!'}), 200
+
+
+
+@app.route('/set_stock_level/<int:item_id>', methods=['POST'])
+def set_stock_level(item_id):
+    data = request.json
+    new_stock_level = data.get('in_stock_level')
+
+    if new_stock_level is None or not isinstance(new_stock_level, int) or new_stock_level < 0:
+        return jsonify({'message': 'Invalid stock level provided.'}), 400
+
+    with get_db_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute('SELECT * FROM items WHERE id = ?', (item_id,))
+        item = cursor.fetchone()
+
+        if not item:
+            return jsonify({'message': 'Item not found.'}), 404
+
+        if new_stock_level > item['max_stock_level']:
+            return jsonify({'message': f'Error: Cannot exceed Max Stock Level ({item["max_stock_level"]}).'}), 400
+
         cursor.execute('UPDATE items SET in_stock_level = ? WHERE id = ?', (new_stock_level, item_id))
         conn.commit()
-        print(f"Stock level updated for item ID {item_id} to {new_stock_level}")
-    return jsonify({'message': f'Item {item_id} stock level updated successfully.'}), 200
+
+        message = f'Stock updated successfully! New stock level: {new_stock_level}.'
+        if new_stock_level <= item['reorder_level']:
+            message += f' Warning: Stock has hit Reorder Level ({item["reorder_level"]}).'
+
+        return jsonify({'message': message}), 200
+
 
 if __name__ == '__main__':
     app.run(debug=True)
