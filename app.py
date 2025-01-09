@@ -1,7 +1,10 @@
-from flask import Flask, render_template, request, redirect, url_for, jsonify
+from flask import Flask, render_template, request, redirect, url_for, jsonify, session
 import sqlite3
 
+from tensorflow.python.distribute.multi_process_runner import manager
+
 app = Flask(__name__)
+
 
 # Database configuration
 DATABASE = 'stock_manager.db'
@@ -47,23 +50,11 @@ def init_db():
             password TEXT NOT NULL,
             employee_name TEXT,
             store_address TEXT,
-            role TEXT NOT NULL CHECK(role IN ('owner', 'employee')),
+            role TEXT NOT NULL CHECK(role IN ('owner', 'employee', 'manager')),
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )''')
 
-        with sqlite3.connect(DATABASE) as conn:
-            cursor = conn.cursor()
-            try:
-                cursor.execute("ALTER TABLE users ADD COLUMN employee_name TEXT")
-                print("Added 'employee_name' column.")
-            except sqlite3.OperationalError:
-                print("'employee_name' column already exists.")
 
-            try:
-                cursor.execute("ALTER TABLE users ADD COLUMN store_address TEXT")
-                print("Added 'store_address' column.")
-            except sqlite3.OperationalError:
-                print("'store_address' column already exists.")
 
         # Add a default category if the table is empty
         cursor.execute('SELECT COUNT(*) FROM categories')
@@ -86,25 +77,6 @@ def init_db():
         conn.commit()
 
 
-init_db()
-
-import sqlite3
-
-DATABASE = 'stock_manager.db'
-
-conn = sqlite3.connect(DATABASE)
-cursor = conn.cursor()
-
-# 查看 users 表结构
-cursor.execute("PRAGMA table_info(users)")
-columns = cursor.fetchall()
-
-print("Users table structure:")
-for column in columns:
-    print(column)
-
-conn.close()
-
 # Route for the login page
 @app.route('/', methods=['GET', 'POST'])
 def login():
@@ -112,21 +84,37 @@ def login():
         username = request.form['username']
         password = request.form['password']
 
-        with get_db_connection() as conn:
-            cursor = conn.cursor()
-            cursor.execute('SELECT * FROM users WHERE username = ? AND password = ?', (username, password))
-            user = cursor.fetchone()
+        try:
+            with get_db_connection() as conn:
+                cursor = conn.cursor()
+                cursor.execute('SELECT * FROM users WHERE username = ? AND password = ?', (username, password))
+                user = cursor.fetchone()
 
-            if user:
+                if not user:
+                    # 用户名或密码错误
+                    return render_template('userlogin.html', error_message='Invalid username or password, please try again.')
+
                 if user['is_authorized'] == 0:
-                    return "Your account has not been authorized by the owner. Please wait for approval."
+                    # 账号未被授权
+                    return render_template('userlogin.html', error_message='Your account has not been authorized. Please wait for approval.')
+
+                # 根据用户角色重定向到不同的页面
                 if user['role'] == 'owner':
                     return redirect(url_for('owner_dashboard'))
                 elif user['role'] == 'employee':
                     return redirect(url_for('employee_dashboard'))
-            else:
-                return "Invalid credentials, please try again."
+                elif user['role'] == 'manager':
+                    return redirect(url_for('manager_dashboard'))
+                else:
+                    # 用户角色无效
+                    return render_template('userlogin.html', error_message='Invalid role assigned to the user.')
+
+        except Exception as e:
+            # 捕获任何异常并显示错误信息
+            return render_template('userlogin.html', error_message=f'An error occurred: {str(e)}')
+
     return render_template('userlogin.html')
+
 
 
 # Route for registration
@@ -145,7 +133,7 @@ def register():
         role = 'employee'
 
         # 输入验证
-        if not username or not password or not employee_name or not store_address or role not in ['owner', 'employee']:
+        if not username or not password or not employee_name or not store_address or role not in ['owner', 'employee', 'manager']:
             return jsonify({'message': 'Error: Missing or invalid input.'}), 400
 
         with get_db_connection() as conn:
@@ -173,11 +161,12 @@ def register():
 def pending_accounts():
     with get_db_connection() as conn:
         cursor = conn.cursor()
-        cursor.execute('SELECT id, username, employee_name, store_address FROM users WHERE is_authorized = 0')
+        cursor.execute('SELECT id, username, role, employee_name, store_address FROM users WHERE is_authorized = 0')
         accounts = [
             {
                 'id': account['id'],
                 'username': account['username'],
+                'role': account['role'],
                 'employee_name': account['employee_name'],
                 'store_address': account['store_address']
             }
@@ -226,6 +215,37 @@ def owner_dashboard():
         cursor.execute('SELECT * FROM items')
         items = cursor.fetchall()
     return render_template('owner_dashboard.html', items=items)
+
+@app.route('/manager_dashboard', methods=['GET', 'POST'])
+def manager_dashboard():
+    if request.method == 'POST':
+        name = request.form['name']
+        category = request.form['category']
+        max_stock_level = int(request.form['max_stock_level'])
+        in_stock_level = int(request.form['in_stock_level'])
+        reorder_level = int(request.form['reorder_level'])
+
+        if in_stock_level >= max_stock_level or reorder_level >= max_stock_level:
+            return "Error: In-Stock Level and Reorder Level must be smaller than Max Stock Level.", 400
+
+        with get_db_connection() as conn:
+            cursor = conn.cursor()
+            try:
+                cursor.execute(
+                    'INSERT INTO items (name, category, max_stock_level, in_stock_level, reorder_level) VALUES (?, ?, ?, ?, ?)',
+                    (name, category, max_stock_level, in_stock_level, reorder_level)
+                )
+                conn.commit()
+            except sqlite3.IntegrityError:
+                return "Error: Item name must be unique.", 400
+
+        return redirect(url_for('manager_dashboard'))
+
+    with get_db_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute('SELECT * FROM items')
+        items = cursor.fetchall()
+    return render_template('manager_dashboard.html', items=items)
 
 # Route for the employee dashboard
 @app.route('/employee_dashboard')

@@ -12,9 +12,9 @@
             <div class="col-md-4">
                 <h3 class="text-center">Login</h3>
                 <!-- Display Error Message -->
-                {% if error %}
+                {% if error_message %}
                 <div class="alert alert-danger text-center">
-                    {{ error }}
+                    {{ error_message }}
                 </div>
                 {% endif %}
                 <form id="loginForm" method="POST" action="/">
@@ -37,3 +37,4 @@
     </div>
 </body>
 </html>
+
