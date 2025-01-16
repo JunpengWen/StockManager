@@ -11,28 +11,21 @@
         <h1 class="text-center">Employee Dashboard</h1>
         <hr>
 
-        <!-- Checklist Submission Section -->
+        <!-- Category Selection Section -->
         <div class="card p-3 mb-5">
-            <h3>Checklist Submission - Set Stock Level</h3>
+            <h3>Employee Checklist</h3>
             <form id="employeeChecklistForm">
                 <div class="mb-3">
                     <label for="employeeCategoryDropdown" class="form-label">Select Category</label>
-                    <select class="form-control" id="employeeCategoryDropdown" required></select>
+                    <select class="form-control" id="employeeCategoryDropdown" required>
+                        <option value="" disabled selected>-- Select Category --</option>
+                    </select>
                 </div>
-                <div class="mb-3">
-                    <label for="employeeItemDropdown" class="form-label">Select Item</label>
-                    <select class="form-control" id="employeeItemDropdown" required></select>
-                </div>
-                <div class="mb-3">
-                    <label for="employeeStockInput" class="form-label">Set New Stock Level</label>
-                    <input type="number" class="form-control" id="employeeStockInput" placeholder="Enter new stock level" min="0" required>
-                </div>
-                <button type="submit" class="btn btn-primary w-100">Update Stock</button>
             </form>
         </div>
 
         <!-- Inventory Audit Section -->
-        <div class="mt-5">
+        <div id="inventoryCheckSection" class="mt-5 d-none">
             <h3>Daily Inventory Check</h3>
             <table class="table table-striped">
                 <thead>
@@ -41,8 +34,7 @@
                         <th>Name</th>
                         <th>Category</th>
                         <th>Current Stock</th>
-                        <th>Reorder Level</th>
-                        <th>Corrected Stock</th>
+                        <th>Update Stock</th>
                         <th>Actions</th>
                     </tr>
                 </thead>
@@ -58,8 +50,9 @@
         </div>
     </div>
 
+    <!-- JavaScript -->
     <script>
-        // Fetch categories for checklist dropdown
+        // Fetch categories for dropdown
         async function fetchCategoriesForEmployee() {
             const response = await fetch('/categories');
             const categories = await response.json();
@@ -73,77 +66,48 @@
             });
         }
 
-        // Fetch items based on selected category
-        async function fetchItemsByCategoryForEmployee(category) {
+        // Fetch items for the selected category and populate the Daily Inventory Check table
+
+        async function fetchItemsForSelectedCategory(category) {
+            if (!category) {
+                document.getElementById('inventoryCheckSection').classList.add('d-none');
+                return;
+            }
+
             const response = await fetch('/items');
             const items = await response.json();
             const filteredItems = items.filter(item => item.category === category);
 
-            const itemDropdown = document.getElementById('employeeItemDropdown');
-            itemDropdown.innerHTML = '<option value="">-- Select Item --</option>';
-            filteredItems.forEach(item => {
-                const option = document.createElement('option');
-                option.value = item.id;
-                option.textContent = `${item.name} (Current Stock: ${item.in_stock_level})`;
-                itemDropdown.appendChild(option);
-            });
-        }
-
-        // Handle checklist form submission
-        document.getElementById('employeeChecklistForm').addEventListener('submit', async function (e) {
-            e.preventDefault();
-
-            const itemId = document.getElementById('employeeItemDropdown').value;
-            const newStockLevel = parseInt(document.getElementById('employeeStockInput').value);
-
-            if (!itemId || isNaN(newStockLevel) || newStockLevel < 0) {
-                alert("Please fill in all fields correctly.");
-                return;
-            }
-
-            const response = await fetch(`/set_stock_level/${itemId}`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ in_stock_level: newStockLevel }),
-            });
-
-            const result = await response.json();
-            if (response.ok) {
-                alert(result.message);
-                fetchItemsByCategoryForEmployee(document.getElementById('employeeCategoryDropdown').value);
-                fetchItemsForAudit(); // Refresh audit table
-            } else {
-                alert(`Error: ${result.message}`);
-            }
-        });
-
-        // Fetch all items for inventory audit table
-        async function fetchItemsForAudit() {
-            const response = await fetch('/items');
-            const items = await response.json();
-
             const auditTableBody = document.getElementById('auditTableBody');
-            auditTableBody.innerHTML = '';
-            items.forEach(item => {
-                const row = `
-                    <tr>
-                        <td>${item.id}</td>
-                        <td>${item.name}</td>
-                        <td>${item.category}</td>
-                        <td>${item.in_stock_level}</td>
-                        <td>${item.reorder_level}</td>
-                        <td>
-                            <input type="number" id="correctedStock_${item.id}" class="form-control form-control-sm"
-                                   value="${item.in_stock_level}" min="0">
-                        </td>
-                        <td>
-                            <button class="btn btn-primary btn-sm" onclick="updateStock(${item.id})">Update</button>
-                        </td>
-                    </tr>
-                `;
-                auditTableBody.insertAdjacentHTML('beforeend', row);
-            });
+            auditTableBody.innerHTML = ''; // Clear previous rows
+
+            if (filteredItems.length === 0) {
+                auditTableBody.innerHTML = `<tr><td colspan="6" class="text-center text-muted">No items in this category.</td></tr>`;
+            } else {
+                filteredItems.forEach(item => {
+                    const row = `
+                        <tr>
+                            <td>${item.id}</td>
+                            <td>${item.name}</td>
+                            <td>${item.category}</td>
+                            <td>${item.in_stock_level}</td>
+                            <td>
+                                <input type="number" id="correctedStock_${item.id}" class="form-control form-control-sm"
+                                       value="${item.in_stock_level}" min="0">
+                            </td>
+                            <td>
+                                <button class="btn btn-primary btn-sm" onclick="updateStock(${item.id})">Update</button>
+                            </td>
+                        </tr>
+                    `;
+                    auditTableBody.insertAdjacentHTML('beforeend', row);
+                });
+            }
+
+            // Show the inventory section
+            document.getElementById('inventoryCheckSection').classList.remove('d-none');
         }
+
 
         // Update stock for corrected values
         async function updateStock(itemId) {
@@ -162,26 +126,22 @@
 
             if (response.ok) {
                 alert("Stock updated successfully!");
-                fetchItemsForAudit();
+                const selectedCategory = document.getElementById('employeeCategoryDropdown').value;
+                fetchItemsForSelectedCategory(selectedCategory); // Refresh the table
             } else {
                 alert("Failed to update stock.");
             }
         }
 
-        // Initialize category and audit table on page load
-        document.addEventListener('DOMContentLoaded', () => {
-            fetchCategoriesForEmployee();
-            fetchItemsForAudit();
-        });
-
         // Event listener for category dropdown change
         document.getElementById('employeeCategoryDropdown').addEventListener('change', function () {
             const selectedCategory = this.value;
-            if (selectedCategory) {
-                fetchItemsByCategoryForEmployee(selectedCategory);
-            } else {
-                document.getElementById('employeeItemDropdown').innerHTML = '<option value="">-- Select Item --</option>';
-            }
+            fetchItemsForSelectedCategory(selectedCategory);
+        });
+
+        // Initialize dropdown and hide table on page load
+        document.addEventListener('DOMContentLoaded', () => {
+            fetchCategoriesForEmployee();
         });
     </script>
 

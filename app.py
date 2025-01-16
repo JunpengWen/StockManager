@@ -2,7 +2,6 @@ from flask import Flask, render_template, request, redirect, url_for, jsonify, s
 import sqlite3
 
 from tensorflow.python.distribute.multi_process_runner import manager
-
 app = Flask(__name__)
 
 
