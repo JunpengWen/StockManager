@@ -30,6 +30,18 @@
                         <input type="text" class="form-control" id="employee_name" name="employee_name" placeholder="Enter your name" required>
                     </div>
 
+                    <!-- Phone Number Field -->
+                    <div class="mb-3">
+                        <label for="phone_number" class="form-label">Phone Number</label>
+                        <input type="tel" class="form-control" id="phone_number" name="phone_number" placeholder="Enter your phone number" required>
+                    </div>
+
+                    <!-- Email Field -->
+                    <div class="mb-3">
+                        <label for="email" class="form-label">Email</label>
+                        <input type="email" class="form-control" id="email" name="email" placeholder="Enter your email" required>
+                    </div>
+
                     <!-- Store Address Field -->
                     <div class="mb-3">
                         <label for="store_address" class="form-label">Store Address</label>
@@ -68,6 +80,8 @@
                 username: document.getElementById('username').value,
                 password: document.getElementById('password').value,
                 employee_name: document.getElementById('employee_name').value,
+                phone_number: document.getElementById('phone_number').value,
+                email: document.getElementById('email').value,
                 store_address: document.getElementById('store_address').value,
                 role: document.getElementById('role').value
             };
