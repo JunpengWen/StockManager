@@ -209,6 +209,20 @@ def authorize_account(account_id):
 
     return jsonify({'message': 'Account authorized successfully!'}), 200
 
+
+@app.route('/reject_account/<int:account_id>', methods=['POST'])
+def reject_account(account_id):
+    with get_db_connection() as conn:
+        cursor = conn.cursor()
+        # 删除该账户
+        cursor.execute('DELETE FROM users WHERE id = ?', (account_id,))
+        conn.commit()
+
+        if cursor.rowcount == 0:
+            return jsonify({'message': 'Error: Account not found.'}), 404
+
+    return jsonify({'message': 'Account rejected successfully!'}), 200
+
 # Route for the owner dashboard
 @app.route('/owner_dashboard', methods=['GET', 'POST'])
 def owner_dashboard():
@@ -509,6 +523,13 @@ def set_stock_level(item_id):
             message += f' Warning: Stock has hit Reorder Level ({item["reorder_level"]}).'
 
         return jsonify({'message': message}), 200
+
+@app.after_request
+def add_header(response):
+    response.headers['Cache-Control'] = 'no-store, no-cache, must-revalidate, max-age=0'
+    response.headers['Pragma'] = 'no-cache'
+    response.headers['Expires'] = '0'
+    return response
 
 
 if __name__ == '__main__':

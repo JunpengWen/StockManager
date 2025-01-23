@@ -303,6 +303,20 @@
 
     <!-- JavaScript -->
     <script>
+
+        function formatRole(role) {
+            const roleMapping = {
+                owner: 'Owner',
+                employee: 'Employee',
+                manager: 'Manager',
+                server: 'Server',
+                line_cook: 'Line Cook',
+                prep_cook: 'Prep Cook'
+            };
+
+            return roleMapping[role] || role; // 如果没有匹配项，返回原值
+        }
+
         // Fetch pending authorization accounts
     async function fetchPendingAccounts() {
         const response = await fetch('/pending_accounts');
@@ -323,19 +337,25 @@
             const row = `
                 <tr>
                     <td>${account.username}</td>
-                    <td>${account.role}</td>
+                    <td>${formatRole(account.role)}</td>
                     <td>${account.employee_name || 'N/A'}</td>
                     <td>${account.store_address || 'N/A'}</td>
                     <td>${account.phone_number || 'N/A'}</td>
                     <td>${account.email || 'N/A'}</td>
                     <td>
                         <button class="btn btn-success btn-sm" onclick="authorizeAccount(${account.id})">Authorize</button>
+                        <button class="btn btn-danger btn-sm" onclick="rejectAccount(${account.id})">Reject</button>
                     </td>
                 </tr>
             `;
             tableBody.insertAdjacentHTML('beforeend', row);
         });
     }
+
+    // 页面加载时调用 fetchPendingAccounts
+    document.addEventListener('DOMContentLoaded', () => {
+        fetchPendingAccounts();
+    });
 
     // Authorize account
     async function authorizeAccount(accountId) {
@@ -346,6 +366,23 @@
             fetchAccounts();// Refresh the table
         } else {
             alert('Failed to authorize account.');
+        }
+    }
+
+    // 拒绝账户授权
+    async function rejectAccount(accountId) {
+        if (confirm('Are you sure you want to reject this account?')) {
+            const response = await fetch(`/reject_account/${accountId}`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' }
+            });
+
+            if (response.ok) {
+                alert('Account rejected successfully!');
+                fetchPendingAccounts(); // 刷新待授权账户列表
+            } else {
+                alert('Failed to reject account.');
+            }
         }
     }
 
@@ -376,18 +413,7 @@
         });
     }
 
-    function formatRole(role) {
-        const roleMapping = {
-            owner: 'Owner',
-            employee: 'Employee',
-            manager: 'Manager',
-            server: 'Server',
-            line_cook: 'Line Cook',
-            prep_cook: 'Prep Cook'
-        };
 
-        return roleMapping[role] || role; // 如果没有匹配项，返回原值
-    }
     // Fetch accounts for Account Management
     async function fetchAccounts() {
         const response = await fetch('/accounts');
@@ -432,6 +458,7 @@
                     <td>${account.email || 'N/A'}</td> <!-- 添加 email 列 -->
                     <td>
                         <button class="btn btn-success btn-sm" onclick="authorizeAccount(${account.id})">Authorize</button>
+                        <button class="btn btn-danger btn-sm" onclick="rejectAccount(${account.id})">Reject</button>
                     </td>
                 </tr>
             `;
