@@ -1,46 +1,47 @@
-from flask import Flask, render_template, request, redirect, url_for, jsonify, session
+
+from flask import Flask, render_template, request, redirect, url_for, jsonify, session, flash
 import sqlite3
+import os
 
-from tensorflow.python.distribute.multi_process_runner import manager
 app = Flask(__name__)
+app.secret_key = 'your_secret_key'  # Required for flashing messages
 
-
+    
 # Database configuration
 DATABASE = 'stock_manager.db'
 
 
+# Define the upload folder
+UPLOAD_FOLDER = 'static/uploads'  # Path to the folder where uploaded files will be saved
+ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg', 'gif'}  # Allowed file extensions
+
+# Configure the Flask app
+app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
+app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024  # Limit file size to 16MB
+
+# Ensure the upload folder exists
+if not os.path.exists(UPLOAD_FOLDER):
+    os.makedirs(UPLOAD_FOLDER)
+
+# Helper function to validate file extensions
+def allowed_file(filename):
+    return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
 
 def get_db_connection():
     conn = sqlite3.connect(DATABASE)
     conn.row_factory = sqlite3.Row
     return conn
 
-# Initialize the database
 def init_db():
     with sqlite3.connect(DATABASE) as conn:
         cursor = conn.cursor()
+
         try:
+            # Add 'is_authorized' column to the users table if it doesn't exist
             cursor.execute("ALTER TABLE users ADD COLUMN is_authorized INTEGER DEFAULT 0")
             print("Added 'is_authorized' column.")
         except sqlite3.OperationalError:
             print("'is_authorized' column already exists.")
-
-        # Adding phone_number column if it doesn't exist
-        try:
-            cursor.execute("ALTER TABLE users ADD COLUMN phone_number TEXT DEFAULT NULL")
-            print("Added 'phone_number' column.")
-        except sqlite3.OperationalError:
-            print("'phone_number' column already exists.")
-
-        # Adding email column if it doesn't exist
-        try:
-            cursor.execute("ALTER TABLE users ADD COLUMN email TEXT DEFAULT NULL")
-            print("Added 'email' column.")
-        except sqlite3.OperationalError:
-            print("'email' column already exists.")
-
-    with sqlite3.connect(DATABASE) as conn:
-        cursor = conn.cursor()
 
         # Create items table
         cursor.execute('''CREATE TABLE IF NOT EXISTS items (
@@ -49,7 +50,9 @@ def init_db():
             category TEXT,
             max_stock_level INTEGER,
             in_stock_level INTEGER,
-            reorder_level INTEGER
+            reorder_level INTEGER,
+            picture TEXT,  -- For storing the picture file path or URL
+            supplier TEXT  -- For storing the supplier name
         )''')
 
         # Create categories table
@@ -65,10 +68,20 @@ def init_db():
             password TEXT NOT NULL,
             employee_name TEXT,
             store_address TEXT,
-            role TEXT NOT NULL CHECK(role IN ('owner', 'employee', 'manager', 'server', 'line_cook', 'prep_cook')),
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            phone_number TEXT DEFAULT NULL,
-            email TEXT DEFAULT NULL
+            role TEXT NOT NULL CHECK(role IN ('owner', 'employee', 'manager')),
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )''')
+
+        # Create stock_updates table
+        cursor.execute('''CREATE TABLE IF NOT EXISTS stock_updates (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL,
+            item_id INTEGER NOT NULL,
+            stock_before INTEGER NOT NULL,
+            stock_after INTEGER NOT NULL,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (user_id) REFERENCES users(id),
+            FOREIGN KEY (item_id) REFERENCES items(id)
         )''')
 
         # Add a default category if the table is empty
@@ -80,14 +93,12 @@ def init_db():
         cursor.execute('SELECT COUNT(*) FROM users')
         if cursor.fetchone()[0] == 0:  # Check if users table is empty
             cursor.execute('''
-                INSERT INTO users (username, password, employee_name, store_address, phone_number, email, role, is_authorized)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-            ''', ("owner", "ownerpass", "Owner Name", "Default Store", "1234567890", "owner@example.com", "owner",
-                  1))  # 设置 is_authorized 为 1
+                INSERT INTO users (username, password, employee_name, store_address, role, is_authorized)
+                VALUES (?, ?, ?, ?, ?, ?)
+            ''', ("owner", "ownerpass", "Owner Name", "Default Store", "owner", 1))  # Set is_authorized to 1
 
-        # 确保所有 owner 用户的 is_authorized 设置为 1
+        # Ensure all owner accounts are authorized
         cursor.execute('UPDATE users SET is_authorized = 1 WHERE role = "owner"')
-        conn.commit()
 
         # Commit changes to the database
         conn.commit()
@@ -107,26 +118,26 @@ def login():
                 user = cursor.fetchone()
 
                 if not user:
-                    # 用户名或密码错误
                     return render_template('userlogin.html', error_message='Invalid username or password, please try again.')
 
                 if user['is_authorized'] == 0:
-                    # 账号未被授权
                     return render_template('userlogin.html', error_message='Your account has not been authorized. Please wait for approval.')
 
-                # 根据用户角色重定向到不同的页面
+                # Store user ID in the session
+                session['user_id'] = user['id']
+                print(f"User {username} logged in with ID {user['id']}")  # Debug log
+
+                # Redirect based on role
                 if user['role'] == 'owner':
                     return redirect(url_for('owner_dashboard'))
-                elif user['role'] in ['employee', 'server', 'line_cook', 'prep_cook']:
+                elif user['role'] == 'employee':
                     return redirect(url_for('employee_dashboard'))
                 elif user['role'] == 'manager':
                     return redirect(url_for('manager_dashboard'))
                 else:
                     return render_template('userlogin.html', error_message='Invalid role assigned to the user.')
 
-
         except Exception as e:
-            # 捕获任何异常并显示错误信息
             return render_template('userlogin.html', error_message=f'An error occurred: {str(e)}')
 
     return render_template('userlogin.html')
@@ -142,18 +153,14 @@ def register():
         username = data.get('username')
         password = data.get('password')
         employee_name = data.get('employee_name')
-        phone_number = data.get('phone_number')  # New field
-        email = data.get('email')  # New field
         store_address = data.get('store_address')
         if not store_address:
             return jsonify({'message': 'Error: Store address is required.'}), 400
         # 强制设置角色为 'employee'
         role = 'employee'
 
-
-
         # 输入验证
-        if not username or not password or not employee_name or not phone_number or not email or not store_address:
+        if not username or not password or not employee_name or not store_address or role not in ['owner', 'employee', 'manager']:
             return jsonify({'message': 'Error: Missing or invalid input.'}), 400
 
         with get_db_connection() as conn:
@@ -161,8 +168,8 @@ def register():
             try:
                 # 插入新用户到数据库
                 cursor.execute(
-                    'INSERT INTO users (username, password, employee_name, phone_number, email, store_address, role, is_authorized) VALUES (?, ?, ?, ?, ?, ?,?,?)',
-                    (username, password, employee_name, phone_number, email, store_address, role, 0)
+                    'INSERT INTO users (username, password, employee_name, store_address, role, is_authorized) VALUES (?, ?, ?, ?, ?, ?)',
+                    (username, password, employee_name, store_address, role, 0)
                 )
                 conn.commit()
                 return jsonify({'message': 'Registration successful!'}), 200
@@ -181,21 +188,18 @@ def register():
 def pending_accounts():
     with get_db_connection() as conn:
         cursor = conn.cursor()
-        cursor.execute('SELECT id, username, role, employee_name, store_address, phone_number, email FROM users WHERE is_authorized = 0')
+        cursor.execute('SELECT id, username, role, employee_name, store_address FROM users WHERE is_authorized = 0')
         accounts = [
             {
                 'id': account['id'],
                 'username': account['username'],
                 'role': account['role'],
                 'employee_name': account['employee_name'],
-                'store_address': account['store_address'],
-                'phone_number': account['phone_number'],
-                'email': account['email']
+                'store_address': account['store_address']
             }
             for account in cursor.fetchall()
         ]
     return jsonify(accounts)
-
 
 @app.route('/authorize_account/<int:account_id>', methods=['POST'])
 def authorize_account(account_id):
@@ -210,79 +214,63 @@ def authorize_account(account_id):
     return jsonify({'message': 'Account authorized successfully!'}), 200
 
 
-@app.route('/reject_account/<int:account_id>', methods=['POST'])
-def reject_account(account_id):
-    with get_db_connection() as conn:
-        cursor = conn.cursor()
-        # 删除该账户
-        cursor.execute('DELETE FROM users WHERE id = ?', (account_id,))
-        conn.commit()
-
-        if cursor.rowcount == 0:
-            return jsonify({'message': 'Error: Account not found.'}), 404
-
-    return jsonify({'message': 'Account rejected successfully!'}), 200
-
 # Route for the owner dashboard
 @app.route('/owner_dashboard', methods=['GET', 'POST'])
 def owner_dashboard():
     if request.method == 'POST':
-        name = request.form['name']
-        category = request.form['category']
-        max_stock_level = int(request.form['max_stock_level'])
-        in_stock_level = int(request.form['in_stock_level'])
-        reorder_level = int(request.form['reorder_level'])
+        try:
+            # Get form data
+            name = request.form['name']
+            category = request.form['category']
+            max_stock_level = int(request.form['max_stock_level'])
+            in_stock_level = int(request.form['in_stock_level'])
+            reorder_level = int(request.form['reorder_level'])
+            supplier = request.form['supplier']
 
-        if in_stock_level >= max_stock_level or reorder_level >= max_stock_level:
-            return "Error: In-Stock Level and Reorder Level must be smaller than Max Stock Level.", 400
+            # Handle file upload
+            picture = request.files['picture']
+            picture_path = None
+            if picture and picture.filename:
+                if not allowed_file(picture.filename):
+                    return "Invalid file type. Allowed types: png, jpg, jpeg, gif.", 400
 
-        with get_db_connection() as conn:
-            cursor = conn.cursor()
-            try:
-                cursor.execute('INSERT INTO items (name, category, max_stock_level, in_stock_level, reorder_level) VALUES (?, ?, ?, ?, ?)',
-                               (name, category, max_stock_level, in_stock_level, reorder_level))
+                filename = os.path.join(app.config['UPLOAD_FOLDER'], picture.filename)
+                picture.save(filename)
+                picture_path = filename
+
+            # Save to database
+            with get_db_connection() as conn:
+                cursor = conn.cursor()
+                cursor.execute('''
+                    INSERT INTO items (name, category, max_stock_level, in_stock_level, reorder_level, picture, supplier)
+                    VALUES (?, ?, ?, ?, ?, ?, ?)
+                ''', (name, category, max_stock_level, in_stock_level, reorder_level, picture_path, supplier))
                 conn.commit()
-            except sqlite3.IntegrityError:
-                return "Error: Item name must be unique.", 400
 
-        return redirect(url_for('owner_dashboard'))
+            # Debug print
+            print(f"Item added: {name}, {category}, {max_stock_level}, {in_stock_level}, {reorder_level}, {supplier}, {picture_path}")
 
+            flash('Item saved successfully!', 'success')
+            return redirect(url_for('owner_dashboard'))
+
+        except KeyError as e:
+            flash(f'Missing form field: {str(e)}', 'error')
+            return redirect(url_for('owner_dashboard'))
+
+        except sqlite3.IntegrityError as e:
+            flash(f'Database error: {str(e)}', 'error')
+            return redirect(url_for('owner_dashboard'))
+
+        except Exception as e:
+            flash(f'An error occurred: {str(e)}', 'error')
+            return redirect(url_for('owner_dashboard'))
+
+    # Render the dashboard
     with get_db_connection() as conn:
         cursor = conn.cursor()
         cursor.execute('SELECT * FROM items')
         items = cursor.fetchall()
     return render_template('owner_dashboard.html', items=items)
-
-@app.route('/manager_dashboard', methods=['GET', 'POST'])
-def manager_dashboard():
-    if request.method == 'POST':
-        name = request.form['name']
-        category = request.form['category']
-        max_stock_level = int(request.form['max_stock_level'])
-        in_stock_level = int(request.form['in_stock_level'])
-        reorder_level = int(request.form['reorder_level'])
-
-        if in_stock_level >= max_stock_level or reorder_level >= max_stock_level:
-            return "Error: In-Stock Level and Reorder Level must be smaller than Max Stock Level.", 400
-
-        with get_db_connection() as conn:
-            cursor = conn.cursor()
-            try:
-                cursor.execute(
-                    'INSERT INTO items (name, category, max_stock_level, in_stock_level, reorder_level) VALUES (?, ?, ?, ?, ?)',
-                    (name, category, max_stock_level, in_stock_level, reorder_level)
-                )
-                conn.commit()
-            except sqlite3.IntegrityError:
-                return "Error: Item name must be unique.", 400
-
-        return redirect(url_for('manager_dashboard'))
-
-    with get_db_connection() as conn:
-        cursor = conn.cursor()
-        cursor.execute('SELECT * FROM items')
-        items = cursor.fetchall()
-    return render_template('manager_dashboard.html', items=items)
 
 # Route for the employee dashboard
 @app.route('/employee_dashboard')
@@ -312,59 +300,50 @@ def categories():
         return jsonify(categories)
 
 # Route for managing accounts
-
 @app.route('/accounts', methods=['GET', 'POST'])
 def accounts():
     with get_db_connection() as conn:
         cursor = conn.cursor()
 
-        if request.method == 'POST':  # 删除账户逻辑
+        if request.method == 'POST':  # Handle account deletion
             user_id = request.json.get('id')
 
-            # 检查用户是否存在
             cursor.execute('SELECT * FROM users WHERE id = ?', (user_id,))
             user = cursor.fetchone()
             if not user:
                 return jsonify({'message': 'Error: User does not exist.'}), 404
 
-            # 禁止删除 Owner 账户
             if user['role'] == 'owner':
                 return jsonify({'message': 'Error: Cannot delete the owner account.'}), 403
 
-            # 删除用户
             cursor.execute('DELETE FROM users WHERE id = ?', (user_id,))
             conn.commit()
 
-            if cursor.rowcount == 0:  # 确保删除成功
+            if cursor.rowcount == 0:  # Check deletion success
                 return jsonify({'message': 'Error: Failed to delete account.'}), 500
 
             return jsonify({'message': 'Account deleted successfully!'}), 200
 
         # 获取已授权账户
-        cursor.execute('SELECT id, username, role, employee_name, store_address, phone_number, email FROM users WHERE is_authorized = 1')
+        cursor.execute('SELECT id, username, role, employee_name, store_address FROM users WHERE is_authorized = 1')
         authorized_accounts = [
             {
                 'id': account['id'],
                 'username': account['username'],
                 'role': account['role'],
                 'employee_name': account['employee_name'] if account['employee_name'] else 'N/A',
-                'store_address': account['store_address'] if account['store_address'] else 'N/A',
-                'phone_number': account['phone_number'] if account['phone_number'] else 'N/A',
-                'email': account['email'] if account['email'] else 'N/A',
+                'store_address': account['store_address'] if account['store_address'] else 'N/A'
             }
             for account in cursor.fetchall()
         ]
-
         # 获取待授权账户
-        cursor.execute('SELECT id, username, employee_name, store_address, phone_number, email FROM users WHERE is_authorized = 0')
+        cursor.execute('SELECT id, username, employee_name, store_address FROM users WHERE is_authorized = 0')
         pending_accounts = [
             {
                 'id': account['id'],
                 'username': account['username'],
                 'employee_name': account['employee_name'] if account['employee_name'] else 'N/A',
-                'store_address': account['store_address'] if account['store_address'] else 'N/A',
-                'phone_number': account['phone_number'] if account['phone_number'] else 'N/A',
-                'email': account['email'] if account['email'] else 'N/A',
+                'store_address': account['store_address'] if account['store_address'] else 'N/A'
             }
             for account in cursor.fetchall()
         ]
@@ -375,7 +354,6 @@ def accounts():
     })
 
 
-
 @app.route('/update_account/<int:account_id>', methods=['POST'])
 def update_account(account_id):
     data = request.json
@@ -384,22 +362,20 @@ def update_account(account_id):
     employee_name = data.get('employee_name')
     store_address = data.get('store_address')
     password = data.get('password')
-    phone_number = data.get('phone_number')  # 获取手机号
-    email = data.get('email')  # 获取邮箱
 
     # 输入验证
-    if not username or not role or not employee_name or not store_address or not phone_number or not email:
+    if not username or not role or not employee_name or not store_address or not password:
         return jsonify({'message': 'Error: Missing or invalid input.'}), 400
 
     with get_db_connection() as conn:
         cursor = conn.cursor()
         try:
-            # 更新账户信息
+            # 更新账户信息，但不更改 ID
             cursor.execute('''
                 UPDATE users 
-                SET username = ?, role = ?, employee_name = ?, store_address = ?, password = ?, phone_number = ?, email = ? 
+                SET username = ?, role = ?, employee_name = ?, store_address = ?, password = ? 
                 WHERE id = ?
-            ''', (username, role, employee_name, store_address, password, phone_number, email, account_id))
+            ''', (username, role, employee_name, store_address, password, account_id))
             conn.commit()
 
             if cursor.rowcount == 0:  # 检查是否更新成功
@@ -410,7 +386,6 @@ def update_account(account_id):
             if 'UNIQUE constraint failed: users.username' in str(e):
                 return jsonify({'message': 'Error: Username already exists.'}), 400
             return jsonify({'message': 'Database error occurred.'}), 500
-
 
 
 @app.route('/items', methods=['GET'])
@@ -427,7 +402,9 @@ def get_items():
                 'category': item['category'],
                 'max_stock_level': item['max_stock_level'],
                 'in_stock_level': item['in_stock_level'],
-                'reorder_level': item['reorder_level']
+                'reorder_level': item['reorder_level'],
+                'supplier': item['supplier'],  # Ensure this is included
+                'picture': item['picture']     # Ensure this is included
             }
             for item in items
         ]
@@ -473,27 +450,24 @@ def create_account():
     role = data.get('role')
     employee_name = data.get('employee_name')
     store_address = data.get('store_address')
-    phone_number = data.get('phone_number')  # 获取手机号
-    email = data.get('email')  # 获取邮箱
     password = data.get('password')
 
-    if not username or not role or not employee_name or not store_address or not phone_number or not email or not password:
+    if not username or not role or not employee_name or not store_address or not password:
         return jsonify({'message': 'Error: Missing or invalid input.'}), 400
 
     with get_db_connection() as conn:
         cursor = conn.cursor()
         try:
             cursor.execute('''
-                INSERT INTO users (username, role, employee_name, store_address, phone_number, email, password)
-                VALUES (?, ?, ?, ?, ?, ?, ?)
-            ''', (username, role, employee_name, store_address, phone_number, email, password))
+                INSERT INTO users (username, role, employee_name, store_address, password)
+                VALUES (?, ?, ?, ?, ?)
+            ''', (username, role, employee_name, store_address, password))
             conn.commit()
             return jsonify({'message': 'Account created successfully!'}), 200
         except sqlite3.IntegrityError as e:
             if 'UNIQUE constraint failed' in str(e):
                 return jsonify({'message': 'Error: Username already exists.'}), 400
             return jsonify({'message': 'Error: Database error occurred.'}), 500
-
 
 
 @app.route('/set_stock_level/<int:item_id>', methods=['POST'])
@@ -506,6 +480,8 @@ def set_stock_level(item_id):
 
     with get_db_connection() as conn:
         cursor = conn.cursor()
+
+        # Fetch the current stock level
         cursor.execute('SELECT * FROM items WHERE id = ?', (item_id,))
         item = cursor.fetchone()
 
@@ -515,21 +491,66 @@ def set_stock_level(item_id):
         if new_stock_level > item['max_stock_level']:
             return jsonify({'message': f'Error: Cannot exceed Max Stock Level ({item["max_stock_level"]}).'}), 400
 
+        # Log the stock update
+        user_id = session.get('user_id')  # Assuming the user ID is stored in the session
+        if not user_id:
+            return jsonify({'message': 'User not authenticated.'}), 401
+
+        # Debug log: Print user_id and item details
+        print(f"User ID: {user_id}, Item ID: {item_id}, Stock Before: {item['in_stock_level']}, Stock After: {new_stock_level}")
+
+        # Insert into stock_updates table
+        cursor.execute('''
+            INSERT INTO stock_updates (user_id, item_id, stock_before, stock_after)
+            VALUES (?, ?, ?, ?)
+        ''', (user_id, item_id, item['in_stock_level'], new_stock_level))
+
+        # Update the stock level in the items table
         cursor.execute('UPDATE items SET in_stock_level = ? WHERE id = ?', (new_stock_level, item_id))
         conn.commit()
 
-        message = f'Stock updated successfully! New stock level: {new_stock_level}.'
+        # Check if stock level is below reorder level
+        warning = None
         if new_stock_level <= item['reorder_level']:
-            message += f' Warning: Stock has hit Reorder Level ({item["reorder_level"]}).'
+            warning = f'Warning: Stock for item "{item["name"]}" has hit Reorder Level ({item["reorder_level"]}).'
 
-        return jsonify({'message': message}), 200
+        return jsonify({
+            'message': f'Stock updated successfully! New stock level: {new_stock_level}.',
+            'warning': warning
+        }), 200
 
-@app.after_request
-def add_header(response):
-    response.headers['Cache-Control'] = 'no-store, no-cache, must-revalidate, max-age=0'
-    response.headers['Pragma'] = 'no-cache'
-    response.headers['Expires'] = '0'
-    return response
+@app.route('/stock_update_history', methods=['GET'])
+def stock_update_history():
+    with get_db_connection() as conn:
+        cursor = conn.cursor()
+
+        # Fetch stock update history with user and item details
+        cursor.execute('''
+            SELECT 
+                su.id, 
+                u.username, 
+                i.name AS item_name, 
+                su.stock_before, 
+                su.stock_after, 
+                su.updated_at
+            FROM stock_updates su
+            JOIN users u ON su.user_id = u.id
+            JOIN items i ON su.item_id = i.id
+            ORDER BY su.updated_at DESC
+        ''')
+        history = [
+            {
+                'id': row['id'],
+                'username': row['username'],
+                'item_name': row['item_name'],
+                'stock_before': row['stock_before'],
+                'stock_after': row['stock_after'],
+                'updated_at': row['updated_at']
+            }
+            for row in cursor.fetchall()
+        ]
+
+    return jsonify(history)
 
 
 if __name__ == '__main__':

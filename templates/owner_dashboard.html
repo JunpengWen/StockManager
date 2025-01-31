@@ -11,6 +11,7 @@
         <h1 class="text-center">Owner Dashboard</h1>
         <hr>
 
+        <!-- Pending Authorization Section -->
         <h4>Pending Authorization</h4>
         <table class="table table-striped">
             <thead>
@@ -19,38 +20,61 @@
                     <th>Role</th>
                     <th>Employee Name</th>
                     <th>Store Address</th>
-                    <th>Phone Number</th>
-                    <th>Email</th>
                     <th>Actions</th>
                 </tr>
             </thead>
             <tbody id="pendingTableBody">
-                <!-- 动态填充 -->
-
+                <!-- Dynamically populated -->
                 <tr id="emptyRow">
-                    <td colspan="7" class="text-center text-muted">No pending authorization requests at the moment.</td>
+                    <td colspan="5" class="text-center text-muted">No pending authorization requests at the moment.</td>
                 </tr>
             </tbody>
         </table>
 
+         <hr>
+
+        <!--  this section displays Stock warnings -->
+        <div id="stockWarnings" class="alert alert-warning d-none">
+            <h4>Stock Warnings</h4>
+            <ul id="warningList"></ul>
+        </div>
+
+         <hr>
+
         <!-- Checklist Section -->
-        <div class="card p-3 mt-4">
-            <h4>Owner Checklist - Set Stock Level</h4>
-            <form id="checklistForm">
+        <div class="card p-3 mb-5">
+            <h3>Owner Inventory Management</h3>
+            <form id="ownerInventoryForm">
                 <div class="mb-3">
-                    <label for="categoryDropdown" class="form-label">Select Category</label>
-                    <select class="form-control" id="categoryDropdown" required></select>
+                    <label for="ownerCategoryDropdown" class="form-label">Select Category</label>
+                    <select class="form-control" id="ownerCategoryDropdown" required>
+                        <option value="" disabled selected>-- Select Category --</option>
+                    </select>
                 </div>
-                <div class="mb-3">
-                    <label for="itemDropdown" class="form-label">Select Item</label>
-                    <select class="form-control" id="itemDropdown" required></select>
-                </div>
-                <div class="mb-3">
-                    <label for="quantityInput" class="form-label">Set New Stock Level</label>
-                    <input type="number" class="form-control" id="quantityInput" placeholder="Enter new stock level" min="0" required>
-                </div>
-                <button type="submit" class="btn btn-primary w-100">Update Stock</button>
             </form>
+        </div>
+
+        <!-- Item List Section -->
+        <div id="itemListSection" class="mt-5 d-none">
+            <h3>Items in Selected Category</h3>
+            <table class="table table-striped">
+                <thead>
+                    <tr>
+                        <th>ID</th>
+                        <th>Name</th>
+                        <th>Category</th>
+                        <th>Current Stock</th>
+                        <th>Max Stock Level</th>
+                        <th>Reorder Level</th>
+                        <th>Supplier</th>
+                        <th>Picture</th>
+                        <th>Actions</th>
+                    </tr>
+                </thead>
+                <tbody id="itemListTableBody">
+                    <!-- Dynamically populated -->
+                </tbody>
+            </table>
         </div>
 
         <hr>
@@ -61,13 +85,12 @@
             <button class="list-group-item list-group-item-action" onclick="showEditCategoryForm()">Edit Category</button>
             <button class="list-group-item list-group-item-action" onclick="showAccountManagement()">Manage Accounts</button>
             <button class="list-group-item list-group-item-action" onclick="showSettingAccountForm()">Setting Account</button>
-
         </div>
 
         <!-- Add Item Form -->
         <div id="addItemForm" class="card p-3 d-none">
             <h4>Add New Item</h4>
-            <form method="POST" action="/owner_dashboard">
+            <form id="addItemFormContent" method="POST" action="/owner_dashboard" enctype="multipart/form-data">
                 <div class="mb-3">
                     <label for="name" class="form-label">Item Name</label>
                     <input type="text" class="form-control" id="name" name="name" required>
@@ -88,6 +111,14 @@
                     <label for="reorder_level" class="form-label">Reorder Level</label>
                     <input type="number" class="form-control" id="reorder_level" name="reorder_level" min="0" required>
                 </div>
+                <div class="mb-3">
+                    <label for="supplier" class="form-label">Supplier</label>
+                    <input type="text" class="form-control" id="supplier" name="supplier" required>
+                </div>
+                <div class="mb-3">
+                    <label for="picture" class="form-label">Item Picture</label>
+                    <input type="file" class="form-control" id="picture" name="picture" accept="image/*">
+                </div>
                 <button type="submit" class="btn btn-success w-100">Save Item</button>
             </form>
         </div>
@@ -105,13 +136,10 @@
             <table class="table table-striped">
                 <thead>
                     <tr>
-
                         <th>Username</th>
                         <th>Role</th>
                         <th>Employee Name</th>
                         <th>Store Address</th>
-                        <th>Phone Number</th>
-                        <th>Email</th>
                         <th>Actions</th>
                     </tr>
                 </thead>
@@ -131,9 +159,7 @@
                     </div>
                     <div class="modal-body">
                         <form id="editAccountForm">
-                            <!-- 隐藏账户 ID -->
                             <input type="hidden" id="editAccountID">
-
                             <div class="mb-3">
                                 <label for="editUsername" class="form-label">Username</label>
                                 <input type="text" class="form-control" id="editUsername" required>
@@ -144,12 +170,8 @@
                                     <option value="owner">Owner</option>
                                     <option value="employee">Employee</option>
                                     <option value="manager">Manager</option>
-                                    <option value="server">Server</option>
-                                    <option value="line_cook">Line Cook</option>
-                                    <option value="prep_cook">Prep Cook</option>
                                 </select>
                             </div>
-
                             <div class="mb-3">
                                 <label for="editEmployeeName" class="form-label">Employee Name</label>
                                 <input type="text" class="form-control" id="editEmployeeName" required>
@@ -157,7 +179,6 @@
                             <div class="mb-3">
                                 <label for="editStoreAddress" class="form-label">Store Address</label>
                                 <select class="form-select" id="editStoreAddress" name="store_address" required>
-
                                     <option value="Kusan Uyghur Cuisine, 1516 N 4th Street, San Jose, CA 95112">
                                         Kusan Uyghur Cuisine, 1516 N 4th Street, San Jose, CA 95112
                                     </option>
@@ -166,17 +187,6 @@
                                     </option>
                                 </select>
                             </div>
-
-                            <div class="mb-3">
-                                <label for="editPhoneNumber" class="form-label">Phone Number</label>
-                                <input type="text" class="form-control" id="editPhoneNumber">
-                            </div>
-                            <div class="mb-3">
-                                <label for="editEmail" class="form-label">Email</label>
-                                <input type="email" class="form-control" id="editEmail">
-                            </div>
-
-
                             <div class="mb-3">
                                 <label for="editPassword" class="form-label">Password</label>
                                 <input type="password" class="form-control" id="editPassword" required>
@@ -199,17 +209,11 @@
                 <div class="mb-3">
                     <label for="createRole" class="form-label">Role</label>
                     <select class="form-select" id="createRole" name="role" required>
-                        <option value="" disabled selected>Select a role</option>
                         <option value="employee">Employee</option>
-                        <option value="server">Server</option>
-                        <option value="line_cook">Line Cook</option>
-                        <option value="prep_cook">Prep Cook</option>
                         <option value="owner">Owner</option>
                         <option value="manager">Manager</option>
                     </select>
-
                 </div>
-
                 <div class="mb-3">
                     <label for="createEmployeeName" class="form-label">Employee Name</label>
                     <input type="text" class="form-control" id="createEmployeeName" placeholder="Enter employee name" required>
@@ -226,17 +230,6 @@
                         </option>
                     </select>
                 </div>
-
-                <div class="mb-3">
-                    <label for="createPhoneNumber" class="form-label">Phone Number</label>
-                    <input type="text" class="form-control" id="createPhoneNumber" placeholder="Enter phone number" required>
-                </div>
-                <div class="mb-3">
-                    <label for="createEmail" class="form-label">Email</label>
-                    <input type="email" class="form-control" id="createEmail" placeholder="Enter email" required>
-                </div>
-
-
                 <div class="mb-3">
                     <label for="createPassword" class="form-label">Password</label>
                     <input type="password" class="form-control" id="createPassword" placeholder="Enter password" required>
@@ -244,22 +237,6 @@
                 <button type="submit" class="btn btn-success w-100">Create Account</button>
             </form>
         </div>
-
-        <!-- Item List -->
-        <table class="table table-striped">
-            <thead>
-                <tr>
-                    <th>ID</th>
-                    <th>Name</th>
-                    <th>Category</th>
-                    <th>Max Stock Level</th>
-                    <th>In-Stock Level</th>
-                    <th>Reorder Level</th>
-                    <th>Actions</th>
-                </tr>
-            </thead>
-            <tbody id="itemTableBody"></tbody>
-        </table>
 
         <!-- Edit Item Modal -->
         <div class="modal fade" id="editItemModal" tabindex="-1">
@@ -295,6 +272,24 @@
             </div>
         </div>
 
+        <div class="card p-3 mt-5">
+            <h3>Stock Update History</h3>
+            <table class="table table-striped">
+                <thead>
+                    <tr>
+                        <th>User</th>
+                        <th>Item</th>
+                        <th>Stock Before</th>
+                        <th>Stock After</th>
+                        <th>Updated At</th>
+                    </tr>
+                </thead>
+                <tbody id="updateHistoryTableBody">
+                    <!-- Dynamically populated -->
+                </tbody>
+            </table>
+        </div>
+
         <!-- Exit -->
         <div class="text-center mt-5">
             <a href="/" class="btn btn-danger">Exit</a>
@@ -303,20 +298,6 @@
 
     <!-- JavaScript -->
     <script>
-
-        function formatRole(role) {
-            const roleMapping = {
-                owner: 'Owner',
-                employee: 'Employee',
-                manager: 'Manager',
-                server: 'Server',
-                line_cook: 'Line Cook',
-                prep_cook: 'Prep Cook'
-            };
-
-            return roleMapping[role] || role; // 如果没有匹配项，返回原值
-        }
-
         // Fetch pending authorization accounts
     async function fetchPendingAccounts() {
         const response = await fetch('/pending_accounts');
@@ -327,7 +308,7 @@
             if (accounts.length === 0) {
                 tableBody.innerHTML = `
                     <tr>
-                        <td colspan="7" class="text-center text-muted">No pending authorization requests at the moment.</td>
+                        <td colspan="5" class="text-center text-muted">No pending authorization requests at the moment.</td>
                     </tr>
                 `;
                 return;
@@ -337,25 +318,17 @@
             const row = `
                 <tr>
                     <td>${account.username}</td>
-                    <td>${formatRole(account.role)}</td>
+                    <td>${account.role}</td>
                     <td>${account.employee_name || 'N/A'}</td>
                     <td>${account.store_address || 'N/A'}</td>
-                    <td>${account.phone_number || 'N/A'}</td>
-                    <td>${account.email || 'N/A'}</td>
                     <td>
                         <button class="btn btn-success btn-sm" onclick="authorizeAccount(${account.id})">Authorize</button>
-                        <button class="btn btn-danger btn-sm" onclick="rejectAccount(${account.id})">Reject</button>
                     </td>
                 </tr>
             `;
             tableBody.insertAdjacentHTML('beforeend', row);
         });
     }
-
-    // 页面加载时调用 fetchPendingAccounts
-    document.addEventListener('DOMContentLoaded', () => {
-        fetchPendingAccounts();
-    });
 
     // Authorize account
     async function authorizeAccount(accountId) {
@@ -369,50 +342,34 @@
         }
     }
 
-    // 拒绝账户授权
-    async function rejectAccount(accountId) {
-        if (confirm('Are you sure you want to reject this account?')) {
-            const response = await fetch(`/reject_account/${accountId}`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' }
-            });
-
-            if (response.ok) {
-                alert('Account rejected successfully!');
-                fetchPendingAccounts(); // 刷新待授权账户列表
-            } else {
-                alert('Failed to reject account.');
-            }
-        }
-    }
-
 
     // Fetch items and populate the table
     async function fetchItems() {
-        const response = await fetch('/items');
-        const items = await response.json();
+        try {
+            const response = await fetch('/items');
+            const items = await response.json();
 
-        const itemTableBody = document.getElementById('itemTableBody');
-        itemTableBody.innerHTML = '';
-
-        items.forEach(item => {
-            const row = document.createElement('tr');
-            row.innerHTML = `
-                <td>${item.id}</td>
-                <td>${item.name}</td>
-                <td>${item.category}</td>
-                <td>${item.max_stock_level}</td>
-                <td>${item.in_stock_level}</td>
-                <td>${item.reorder_level}</td>
-                <td>
-                    <button class="btn btn-primary btn-sm" onclick='openEditModal(${JSON.stringify(item)})'>Edit Item</button>
-                    <button class="btn btn-danger btn-sm" onclick="deleteItem(${item.id})">Delete</button>
-                </td>
-            `;
-            itemTableBody.appendChild(row);
-        });
+            const itemTableBody = document.getElementById('itemTableBody');
+            if (itemTableBody) {
+                itemTableBody.innerHTML = ''; // Clear previous rows
+                items.forEach(item => {
+                    const row = `
+                        <tr>
+                            <td>${item.id}</td>
+                            <td>${item.name}</td>
+                            <td>${item.category}</td>
+                            <td>${item.in_stock_level}</td>
+                        </tr>
+                    `;
+                    itemTableBody.insertAdjacentHTML('beforeend', row);
+                });
+            } else {
+                console.error('Table body not found!');
+            }
+        } catch (error) {
+            console.error('Failed to fetch items:', error);
+        }
     }
-
 
     // Fetch accounts for Account Management
     async function fetchAccounts() {
@@ -429,20 +386,17 @@
             const row = `
                 <tr>
                     <td>${account.username}</td>
-                    <td>${formatRole(account.role)}</td>
+                    <td>${account.role}</td>
                     <td>${account.employee_name}</td>
                     <td>${account.store_address}</td>
-                    <td>${account.phone_number || 'N/A'}</td> <!-- 添加 Phone Number -->
-                    <td>${account.email || 'N/A'}</td> <!-- 添加 Email -->
                     <td>
                         <button class="btn btn-danger btn-sm" onclick="deleteAccount(${account.id})">Delete</button>
-                        <button class="btn btn-warning btn-sm" onclick="resetAccount(${account.id}, '${account.username}', '${account.role}', '${account.employee_name}', '${account.store_address}', '${account.phone_number}', '${account.email}')">Reset</button>
+                        <button class="btn btn-warning btn-sm" onclick="resetAccount(${account.id}, '${account.username}', '${account.role}', '${account.employee_name}', '${account.store_address}')">Reset</button>
                     </td>
                 </tr>
             `;
             accountTableBody.insertAdjacentHTML('beforeend', row);
         });
-
 
         // Populate Pending Authorization Table
         const pendingTableBody = document.getElementById('pendingTableBody');
@@ -451,23 +405,19 @@
             const row = `
                 <tr>
                     <td>${account.username}</td>
-                    <td>${account.role || 'N/A'}</td>
-                    <td>${account.employee_name || 'N/A'}</td>
-                    <td>${account.store_address || 'N/A'}</td>
-                    <td>${account.phone_number || 'N/A'}</td> <!-- 添加 phone_number 列 -->
-                    <td>${account.email || 'N/A'}</td> <!-- 添加 email 列 -->
+                    <td>${account.role}</td>
+                    <td>${account.employee_name}</td>
+                    <td>${account.store_address}</td>
                     <td>
                         <button class="btn btn-success btn-sm" onclick="authorizeAccount(${account.id})">Authorize</button>
-                        <button class="btn btn-danger btn-sm" onclick="rejectAccount(${account.id})">Reject</button>
                     </td>
                 </tr>
             `;
             pendingTableBody.insertAdjacentHTML('beforeend', row);
         });
-
     }
 
-    function resetAccount(accountId, username, role, employeeName, storeAddress, phoneNumber, email) {
+    function resetAccount(accountId, username, role, employeeName, storeAddress) {
     // 将参数填充到模态框中
     document.getElementById('editAccountID').value = accountId;
     document.getElementById('editUsername').value = username;
@@ -479,8 +429,6 @@
             option.selected = true;
         }
     });
-    document.getElementById('editPhoneNumber').value = phoneNumber || ''; // 填充手机号
-    document.getElementById('editEmail').value = email || ''; // 填充邮箱
     document.getElementById('editPassword').value = ''; // 清空密码字段
 
     // 打开模态框
@@ -488,14 +436,12 @@
     editModal.show();
 }
     // Open the Edit Modal
-    function openEditAccountModal(id, username, role, employeeName, storeAddress, phoneNumber, email) {
+    function openEditAccountModal(id, username, role, employeeName, storeAddress) {
     // 将参数填充到表单字段
     document.getElementById('editUsername').value = username;
     document.getElementById('editRole').value = role;
     document.getElementById('editEmployeeName').value = employeeName;
     document.getElementById('editStoreAddress').value = storeAddress;
-    document.getElementById('editPhoneNumber').value = phoneNumber; // 填充手机号
-    document.getElementById('editEmail').value = email; // 填充邮箱
     document.getElementById('editPassword').value = ''; // 清空密码字段
 
     // 将账户 ID 存储在隐藏字段中，用于提交时定位账户
@@ -516,8 +462,6 @@
             role: document.getElementById('editRole').value,
             employee_name: document.getElementById('editEmployeeName').value,
             store_address: document.getElementById('editStoreAddress').value,
-            phone_number: document.getElementById('editPhoneNumber').value, // 添加手机号
-            email: document.getElementById('editEmail').value, // 添加邮箱
             password: document.getElementById('editPassword').value,
         };
 
@@ -564,70 +508,89 @@
         }
     }
 
-    // Open Edit Item Modal
-    async function openEditModal(item) {
-        const response = await fetch('/categories');
-        const categories = await response.json();
-        const categoryDropdown = document.getElementById('editItemCategoryDropdown');
+        // Open Edit Item Modal
+        async function openEditModal(item) {
+            const response = await fetch('/categories');
+            const categories = await response.json();
+            const categoryDropdown = document.getElementById('editItemCategoryDropdown');
 
-        categoryDropdown.innerHTML = '<option value="">-- Select Category --</option>';
-        categories.forEach(category => {
-            const option = document.createElement('option');
-            option.value = category;
-            option.textContent = category;
-            categoryDropdown.appendChild(option);
-        });
+            // Clear and populate the category dropdown
+            categoryDropdown.innerHTML = '<option value="">-- Select Category --</option>';
+            categories.forEach(category => {
+                const option = document.createElement('option');
+                option.value = category;
+                option.textContent = category;
+                categoryDropdown.appendChild(option);
+            });
 
-        document.getElementById('editItemID').value = item.id;
-        document.getElementById('editItemCategoryDropdown').value = item.category;
-        document.getElementById('editMaxStock').value = item.max_stock_level;
-        document.getElementById('editInStock').value = item.in_stock_level;
-        document.getElementById('editReorderLevel').value = item.reorder_level;
+            // Populate the form fields with the item's data
+            document.getElementById('editItemID').value = item.id;
+            document.getElementById('editItemCategoryDropdown').value = item.category;
+            document.getElementById('editMaxStock').value = item.max_stock_level;
+            document.getElementById('editInStock').value = item.in_stock_level;
+            document.getElementById('editReorderLevel').value = item.reorder_level;
 
-        const editItemModal = new bootstrap.Modal(document.getElementById('editItemModal'));
-        editItemModal.show();
-    }
-
-    // Submit Edit Item Form
-    document.getElementById('editItemForm').addEventListener('submit', async function (e) {
-        e.preventDefault();
-
-        const itemId = document.getElementById('editItemID').value;
-        const updatedData = {
-            category: document.getElementById('editItemCategoryDropdown').value,
-            max_stock_level: parseInt(document.getElementById('editMaxStock').value),
-            in_stock_level: parseInt(document.getElementById('editInStock').value),
-            reorder_level: parseInt(document.getElementById('editReorderLevel').value),
-        };
-
-        const response = await fetch(`/update_item/${itemId}`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(updatedData),
-        });
-
-        const result = await response.json();
-        if (response.ok) {
-            alert(result.message);
-            fetchItems();
-        } else {
-            alert(`Error: ${result.message}`);
+            // Show the modal
+            const editItemModal = new bootstrap.Modal(document.getElementById('editItemModal'));
+            editItemModal.show();
         }
-    });
 
-    // Delete Item
-    async function deleteItem(itemId) {
-        if (confirm('Are you sure you want to delete this item?')) {
-            const response = await fetch(`/delete_item/${itemId}`, { method: 'POST' });
+        // Submit Edit Item Form
+        document.getElementById('editItemForm').addEventListener('submit', async function (e) {
+            e.preventDefault();
 
+            const itemId = document.getElementById('editItemID').value;
+            const updatedData = {
+                category: document.getElementById('editItemCategoryDropdown').value,
+                max_stock_level: parseInt(document.getElementById('editMaxStock').value),
+                in_stock_level: parseInt(document.getElementById('editInStock').value),
+                reorder_level: parseInt(document.getElementById('editReorderLevel').value),
+            };
+
+            const response = await fetch(`/update_item/${itemId}`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(updatedData),
+            });
+
+            const result = await response.json();
             if (response.ok) {
-                alert('Item deleted successfully!');
-                fetchItems();
+                alert(result.message);
+                fetchItemsForOwnerCategory(document.getElementById('ownerCategoryDropdown').value); // Refresh the item list
             } else {
-                alert('Failed to delete item.');
+                alert(`Error: ${result.message}`);
+            }
+
+            // Hide the modal
+            const editItemModal = bootstrap.Modal.getInstance(document.getElementById('editItemModal'));
+            editItemModal.hide();
+        });
+
+        // Delete Item
+        async function deleteItem(itemId) {
+            if (confirm('Are you sure you want to delete this item?')) {
+                const response = await fetch(`/delete_item/${itemId}`, { method: 'POST' });
+
+                if (response.ok) {
+                    alert('Item deleted successfully!');
+                    fetchItemsForOwnerCategory(document.getElementById('ownerCategoryDropdown').value); // Refresh the item list
+                } else {
+                    alert('Failed to delete item.');
+                }
             }
         }
-    }
+
+        // Event listener for category dropdown change
+        document.getElementById('ownerCategoryDropdown').addEventListener('change', function () {
+            const selectedCategory = this.value;
+            fetchItemsForOwnerCategory(selectedCategory);
+        });
+
+        // Initialize dropdown and hide table on page load
+        document.addEventListener('DOMContentLoaded', () => {
+            fetchCategories();
+            fetchItemsForOwnerCategory(document.getElementById('ownerCategoryDropdown').value);
+        });
 
     // Save categories
     async function saveCategories() {
@@ -652,23 +615,43 @@
     }
 
     // Fetch categories and populate dropdowns
-    async function fetchCategories() {
-        const response = await fetch('/categories');
-        const categories = await response.json();
+        async function fetchCategories() {
+            const response = await fetch('/categories');
+            const categories = await response.json();
 
-        const categoryDropdowns = [document.getElementById('category'), document.getElementById('categoryDropdown')];
-        categoryDropdowns.forEach(dropdown => {
-            dropdown.innerHTML = '<option value="">-- Select Category --</option>';
+            // Populate the owner category dropdown
+            const ownerCategoryDropdown = document.getElementById('ownerCategoryDropdown');
+            ownerCategoryDropdown.innerHTML = '<option value="">-- Select Category --</option>';
             categories.forEach(category => {
                 const option = document.createElement('option');
                 option.value = category;
                 option.textContent = category;
-                dropdown.appendChild(option);
+                ownerCategoryDropdown.appendChild(option);
             });
-        });
 
-        document.getElementById('categoriesList').value = categories.join('\n');
-    }
+            // Populate the add item category dropdown
+            const addItemCategoryDropdown = document.getElementById('category');
+            addItemCategoryDropdown.innerHTML = '<option value="">-- Select Category --</option>';
+            categories.forEach(category => {
+                const option = document.createElement('option');
+                option.value = category;
+                option.textContent = category;
+                addItemCategoryDropdown.appendChild(option);
+            });
+
+            // Populate the edit item category dropdown
+            const editItemCategoryDropdown = document.getElementById('editItemCategoryDropdown');
+            editItemCategoryDropdown.innerHTML = '<option value="">-- Select Category --</option>';
+            categories.forEach(category => {
+                const option = document.createElement('option');
+                option.value = category;
+                option.textContent = category;
+                editItemCategoryDropdown.appendChild(option);
+            });
+
+            // Update the categories list in the edit categories form
+            document.getElementById('categoriesList').value = categories.join('\n');
+        }
 
     // Fetch items by category for the checklist
     async function fetchItemsByCategory(category) {
@@ -686,28 +669,83 @@
         });
     }
 
-    // Handle Checklist Form Submission
-    document.getElementById('checklistForm').addEventListener('submit', async function (e) {
-        e.preventDefault();
+        // Fetch items for the selected category and populate the Item List Section
+        async function fetchItemsForOwnerCategory(category) {
+            if (!category) {
+                document.getElementById('itemListSection').classList.add('d-none');
+                return;
+            }
 
-        const itemId = document.getElementById('itemDropdown').value;
-        const newStockLevel = parseInt(document.getElementById('quantityInput').value);
+            const response = await fetch('/items');
+            const items = await response.json();
+            console.log("Fetched items:", items); // Debug log
 
-        if (!itemId || isNaN(newStockLevel) || newStockLevel < 0) {
-            alert("Please enter a valid stock level.");
-            return;
+            const filteredItems = items.filter(item => item.category === category);
+            console.log("Filtered items:", filteredItems); // Debug log
+
+            const tableBody = document.getElementById('itemListTableBody');
+            tableBody.innerHTML = ''; // Clear previous rows
+
+            if (filteredItems.length === 0) {
+                tableBody.innerHTML = `<tr><td colspan="9" class="text-center text-muted">No items in this category.</td></tr>`;
+            } else {
+                filteredItems.forEach(item => {
+                    const row = `
+                        <tr>
+                            <td>${item.id}</td>
+                            <td>${item.name}</td>
+                            <td>${item.category}</td>
+                            <td>${item.in_stock_level}</td>
+                            <td>${item.max_stock_level}</td>
+                            <td>${item.reorder_level}</td>
+                            <td>${item.supplier || 'N/A'}</td>
+                            <td>
+                                ${item.picture ? `<img src="${item.picture}" alt="${item.name}" style="width: 50px; height: 50px;">` : 'No Picture'}
+                            </td>
+                            <td>
+                                <button class="btn btn-primary btn-sm edit-item-btn"
+                                        data-item-id="${item.id}"
+                                        data-item-name="${item.name}"
+                                        data-item-category="${item.category}"
+                                        data-item-max-stock="${item.max_stock_level}"
+                                        data-item-in-stock="${item.in_stock_level}"
+                                        data-item-reorder-level="${item.reorder_level}">
+                                    Edit Item
+                                </button>
+                                <button class="btn btn-danger btn-sm delete-item-btn" data-item-id="${item.id}">Delete</button>
+                            </td>
+                        </tr>
+                    `;
+                    tableBody.insertAdjacentHTML('beforeend', row);
+                });
+            }
+
+            // Show the Item List Section
+            document.getElementById('itemListSection').classList.remove('d-none');
         }
 
-        const response = await fetch(`/set_stock_level/${itemId}`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ in_stock_level: newStockLevel }),
+
+        // Event delegation for Edit and Delete buttons
+        document.addEventListener('click', function (e) {
+            if (e.target.classList.contains('edit-item-btn')) {
+                const itemId = e.target.getAttribute('data-item-id');
+                const item = {
+                    id: itemId,
+                    name: e.target.getAttribute('data-item-name'),
+                    category: e.target.getAttribute('data-item-category'),
+                    max_stock_level: e.target.getAttribute('data-item-max-stock'),
+                    in_stock_level: e.target.getAttribute('data-item-in-stock'),
+                    reorder_level: e.target.getAttribute('data-item-reorder-level'),
+                };
+                openEditModal(item);
+            }
+
+            if (e.target.classList.contains('delete-item-btn')) {
+                const itemId = e.target.getAttribute('data-item-id');
+                deleteItem(itemId);
+            }
         });
 
-        const result = await response.json();
-        alert(result.message);
-        fetchItemsByCategory(document.getElementById('categoryDropdown').value);
-    });
 
     // Handle Setting Account Form Submission
     document.getElementById('createAccountForm').addEventListener('submit', async (e) => {
@@ -718,8 +756,6 @@
         role: document.getElementById('createRole').value,
         employee_name: document.getElementById('createEmployeeName').value,
         store_address: document.getElementById('createStoreAddress').value,
-        phone_number: document.getElementById('createPhoneNumber').value, // 添加手机号
-        email: document.getElementById('createEmail').value, // 添加邮箱
         password: document.getElementById('createPassword').value,
     };
 
@@ -782,15 +818,138 @@
 
     }
 
-    // Event listener for category dropdown changes
-    document.getElementById('categoryDropdown').addEventListener('change', function () {
-        const selectedCategory = this.value;
-        if (selectedCategory) {
-            fetchItemsByCategory(selectedCategory);
+
+    document.addEventListener('DOMContentLoaded', () => {
+        const addItemForm = document.getElementById('addItemFormContent');
+        if (addItemForm) {
+            addItemForm.addEventListener('submit', async (e) => {
+                e.preventDefault(); // Prevent default form submission
+
+                // Handle form submission
+                const formData = new FormData(addItemForm);
+
+                try {
+                    const response = await fetch('/owner_dashboard', {
+                        method: 'POST',
+                        body: formData,
+                    });
+
+                    if (response.ok) {
+                        alert('Item saved successfully!');
+                        window.location.reload(); // Refresh the page
+                    } else {
+                        alert('Failed to save item.');
+                    }
+                } catch (error) {
+                    console.error('Error:', error);
+                    alert('An error occurred while saving the item.');
+                }
+            });
         } else {
-            document.getElementById('itemDropdown').innerHTML = '<option value="">-- Select Item --</option>';
+            console.error('Add Item form not found!');
         }
     });
+
+    // Handle Stock Warnings displays
+    async function fetchStockWarnings() {
+        const response = await fetch('/items');
+        const items = await response.json();
+
+        const warnings = items.filter(item => item.in_stock_level <= item.reorder_level);
+        const warningList = document.getElementById('warningList');
+        const stockWarnings = document.getElementById('stockWarnings');
+
+        warningList.innerHTML = ''; // Clear previous warnings
+
+        if (warnings.length > 0) {
+            warnings.forEach(item => {
+                const warningItem = document.createElement('li');
+                warningItem.textContent = `Item "${item.name}" (ID: ${item.id}) is below reorder level. Current stock: ${item.in_stock_level}, Reorder level: ${item.reorder_level}.`;
+                warningList.appendChild(warningItem);
+            });
+            stockWarnings.classList.remove('d-none'); // Show the warning section
+        } else {
+            stockWarnings.classList.add('d-none'); // Hide the warning section if no warnings
+        }
+    }
+
+    // Fetch warnings when the page loads
+    document.addEventListener('DOMContentLoaded', () => {
+        fetchStockWarnings();
+    });
+
+    // Optionally, fetch warnings periodically (e.g., every 5 minutes)
+    setInterval(fetchStockWarnings, 300000); // 300000 ms = 5 minutes
+
+    // Function to fetch and update the stock table
+    async function updateStockTable() {
+        const response = await fetch('/items');
+        const items = await response.json();
+
+        // Update the table dynamically (example for employee_dashboard)
+        const tableBody = document.getElementById('auditTableBody'); // Change this ID for other dashboards
+        tableBody.innerHTML = ''; // Clear previous rows
+
+        items.forEach(item => {
+            const row = `
+                <tr>
+                    <td>${item.id}</td>
+                    <td>${item.name}</td>
+                    <td>${item.category}</td>
+                    <td>${item.in_stock_level}</td>
+                    <td>${item.supplier || 'N/A'}</td>
+                    <td>
+                        ${item.picture ? `<img src="${item.picture}" alt="${item.name}" style="width: 50px; height: 50px;">` : 'No Picture'}
+                    </td>
+                    <td>
+                        <input type="number" id="correctedStock_${item.id}" class="form-control form-control-sm"
+                               value="${item.in_stock_level}" min="0">
+                    </td>
+                    <td>
+                        <button class="btn btn-primary btn-sm" onclick="updateStock(${item.id})">Update</button>
+                    </td>
+                </tr>
+            `;
+            tableBody.insertAdjacentHTML('beforeend', row);
+        });
+    }
+
+    // Fetch and update the table periodically (e.g., every 1 minute)
+    setInterval(updateStockTable, 60000); // 60000 ms = 1 minute
+
+    // Fetch and update the table when the page loads
+    document.addEventListener('DOMContentLoaded', () => {
+        updateStockTable();
+    });
+
+    async function fetchUpdateHistory() {
+        const response = await fetch('/stock_update_history');
+        const history = await response.json();
+
+        const tableBody = document.getElementById('updateHistoryTableBody');
+        tableBody.innerHTML = ''; // Clear previous rows
+
+        history.forEach(entry => {
+            const row = `
+                <tr>
+                    <td>${entry.username}</td>
+                    <td>${entry.item_name}</td>
+                    <td>${entry.stock_before}</td>
+                    <td>${entry.stock_after}</td>
+                    <td>${new Date(entry.updated_at).toLocaleString()}</td>
+                </tr>
+            `;
+            tableBody.insertAdjacentHTML('beforeend', row);
+        });
+    }
+
+    // Fetch update history when the page loads
+    document.addEventListener('DOMContentLoaded', () => {
+        fetchUpdateHistory();
+    });
+
+    // Optionally, fetch update history periodically (e.g., every 5 minutes)
+    setInterval(fetchUpdateHistory, 300000); // 300000 ms = 5 minutes
 
     // Initialize
     fetchItems();
