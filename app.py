@@ -2,7 +2,6 @@
 from flask import Flask, render_template, request, redirect, url_for, jsonify, session, flash
 import sqlite3
 import os
-from tensorflow.python.distribute.multi_process_runner import manager
 from flask import send_file
 from reportlab.lib.pagesizes import letter
 from reportlab.pdfgen import canvas
