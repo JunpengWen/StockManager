@@ -596,21 +596,26 @@ def update_account(account_id):
                         return jsonify({'message': 'System must have at least one owner'}), 400
 
             # Build update parameters
-            update_data = (
+            update_data = [
                 data['username'],
                 data['role'],
                 data['employee_name'],
                 data['store_address'],
                 data['phone_number'],
                 data['email'],
-                account_id
-            )
+                account_id  # account_id 放在最后
+            ]
 
-            # Optional password update
-            password_clause = 'password = ?,' if data.get('password') else ''
+            password_clause = ''
             if data.get('password'):
-                update_data = (data['password'],) + update_data
+                password_clause = ', password = ?'
+                # 将密码插入到倒数第二个位置（account_id 之前）
+                update_data.insert(-1, data['password'])
 
+            # 转换为元组
+            update_data = tuple(update_data)
+
+            # 执行 SQL
             cursor.execute(f'''
                 UPDATE users SET 
                     username = ?, 
@@ -618,8 +623,7 @@ def update_account(account_id):
                     employee_name = ?, 
                     store_address = ?, 
                     phone_number = ?, 
-                    email = ?
-                    {',' + password_clause if password_clause else ''}
+                    email = ?{password_clause}
                 WHERE id = ?
             ''', update_data)
 
@@ -662,6 +666,9 @@ def get_items():
         cursor.execute(base_query, params)
         items = cursor.fetchall()
         items_list = [dict(item) for item in items]
+
+    # Debug: Print items to console
+    print("Items returned from /items endpoint:", items_list)
 
     return jsonify(items_list)
 
