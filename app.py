@@ -7,6 +7,9 @@ import os
 from flask import send_file
 from reportlab.lib.pagesizes import letter
 from reportlab.pdfgen import canvas
+from werkzeug.routing import ValidationError
+from werkzeug.utils import secure_filename
+
 app = Flask(__name__)
 app.secret_key = 'your_secret_key'  # Required for flashing messages
 
@@ -167,8 +170,10 @@ def login():
                     return redirect(url_for('owner_dashboard'))
                 elif user['role'] == 'manager':
                     return redirect(url_for('manager_dashboard'))
-                else:
+                elif user['role'] in ['employee', 'server', 'line_cook', 'prep_cook']:
                     return redirect(url_for('employee_dashboard'))
+                else:
+                    return render_template('userlogin.html', error_message='Invalid role assigned to the user.')
 
         except Exception as e:
             return render_template('userlogin.html',
@@ -242,7 +247,7 @@ def pending_accounts():
     with get_db_connection() as conn:
         cursor = conn.cursor()
 
-        # Build query based on user role
+        # 构建基础查询
         base_query = '''
             SELECT id, username, role, employee_name, 
                    store_address, phone_number, email 
@@ -251,12 +256,18 @@ def pending_accounts():
         '''
         params = []
 
+        # 非 owner 用户只能查看自己门店的待授权账户
         if session.get('role') != 'owner':
             base_query += ' AND store_address = ?'
             params.append(session.get('store_address'))
 
+        # 显式处理空值情况
         cursor.execute(base_query, params)
-        accounts = [dict(account) for account in cursor.fetchall()]
+        raw_accounts = cursor.fetchall()
+        accounts = [dict(account) for account in raw_accounts] if raw_accounts else []
+
+        # 添加 debug 日志输出 (上线后可移除)
+        print(f"[DEBUG] Pending accounts query returns {len(accounts)} records")
 
     return jsonify(accounts)
 
@@ -306,83 +317,145 @@ def reject_account(account_id):
 @app.route('/owner_dashboard', methods=['GET', 'POST'])
 def owner_dashboard():
     if session.get('role') != 'owner':
-        return redirect(url_for('login'))  # Or show 403
+        return redirect(url_for('login'))
+
+    # 集中处理POST请求（表单+JSON）
     if request.method == 'POST':
-        try:
-            # Get form data including store selection
-            name = request.form['name']
-            category = request.form['category']
-            max_stock_level = int(request.form['max_stock_level'])
-            in_stock_level = int(request.form['in_stock_level'])
-            reorder_level = int(request.form['reorder_level'])
-            supplier = request.form['supplier']
-            store_address = request.form['store_address']  # Get store from form
+        return handle_owner_post_request()
 
-            # Handle file upload
-            picture = request.files['picture']
-            picture_path = None
-            if picture and picture.filename:
-                if not allowed_file(picture.filename):
-                    flash('Invalid file type. Allowed types: png, jpg, jpeg, gif.', 'error')
-                    return redirect(url_for('owner_dashboard'))
+    # 处理GET请求
+    return handle_owner_get_request()
 
-                filename = os.path.join(app.config['UPLOAD_FOLDER'], picture.filename)
-                picture.save(filename)
-                picture_path = filename
 
-            # Save to database with store address
-            with get_db_connection() as conn:
-                cursor = conn.cursor()
-                cursor.execute('''
-                    INSERT INTO items (
-                        name, category, max_stock_level, 
-                        in_stock_level, reorder_level, 
-                        picture, supplier, store_address
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-                ''', (
-                    name, category, max_stock_level,
-                    in_stock_level, reorder_level,
-                    picture_path, supplier, store_address
-                ))
-                conn.commit()
+def handle_owner_post_request():
+    try:
+        # 统一处理表单数据和JSON数据
+        if request.is_json:
+            data = request.get_json()
+            store_address = data.get('store_address', '')
+            picture_path = None  # JSON请求不处理图片上传
+        else:
+            data = request.form
+            store_address = data.get('store_address')
+            picture = request.files.get('picture')
+            picture_path = save_uploaded_file(picture) if picture else None
 
+        # 增强数据验证
+        validated_data = validate_item_data(data)
+
+        # 数据库操作
+        with get_db_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute('''
+                INSERT INTO items (
+                    name, category, max_stock_level, 
+                    in_stock_level, reorder_level, 
+                    picture, supplier, store_address
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            ''', (
+                validated_data['name'],
+                validated_data['category'],
+                validated_data['max_stock_level'],
+                validated_data['in_stock_level'],
+                validated_data['reorder_level'],
+                picture_path,
+                validated_data['supplier'],
+                store_address
+            ))
+            conn.commit()
+
+        # 根据请求类型返回响应
+        if request.is_json:
+            return jsonify({'message': 'Item added successfully'}), 201
+        else:
             flash('Item saved successfully!', 'success')
             return redirect(url_for('owner_dashboard'))
 
-        except KeyError as e:
-            flash(f'Missing form field: {str(e)}', 'error')
-            return redirect(url_for('owner_dashboard'))
-        except sqlite3.IntegrityError as e:
-            flash(f'Database error: {str(e)}', 'error')
-            return redirect(url_for('owner_dashboard'))
-        except Exception as e:
-            flash(f'An error occurred: {str(e)}', 'error')
-            return redirect(url_for('owner_dashboard'))
+    except ValidationError as e:
+        return handle_error(e.message, 400)
+    except sqlite3.IntegrityError as e:
+        return handle_error('Item name already exists', 409)
+    except Exception as e:
+        return handle_error('Server error', 500)
 
-    # Handle filtering for GET requests
+
+def save_uploaded_file(file):
+    if file and allowed_file(file.filename):
+        # Generate secure filename and save
+        filename = secure_filename(file.filename)
+        file_path = os.path.join(app.config['UPLOAD_FOLDER'], filename)
+        file.save(file_path)
+        return filename  # Returns relative path to stored file
+    return None
+
+def handle_error(message, status_code):
+    if request.is_json:
+        return jsonify({'message': message}), status_code
+    else:
+        flash(message, 'error')
+        return redirect(url_for('owner_dashboard'))
+
+def handle_owner_get_request():
     store_filter = request.args.get('store', '')
-    query = 'SELECT * FROM items'
     params = []
 
+    # 构建查询条件
+    query = 'SELECT * FROM items'
     if store_filter:
         query += ' WHERE store_address = ?'
         params.append(store_filter)
 
+    # 执行查询
     with get_db_connection() as conn:
         cursor = conn.cursor()
         cursor.execute(query, params)
         items = cursor.fetchall()
 
-    # Get available stores for filtering
-    VALID_STORES = [
-        "Kusan Uyghur Cuisine, 1516 N 4th Street, San Jose, CA 95112",
-        "Kusan Bazaar, 510 Barber Ln, Milpitas, CA 95035"
-    ]
-
     return render_template('owner_dashboard.html',
                            items=items,
                            valid_stores=VALID_STORES,
                            selected_store=store_filter)
+
+
+# 辅助函数
+def validate_item_data(data):
+    required_fields = {
+        'name': (str, lambda x: len(x) >= 2),
+        'category': (str, lambda x: x in get_categories()),
+        'max_stock_level': (int, lambda x: x > 0),
+        'in_stock_level': (int, lambda x: x >= 0),
+        'reorder_level': (int, lambda x: x > 0),
+        'supplier': (str, lambda x: len(x) >= 2),
+        'store_address': (str, lambda x: x in VALID_STORES)
+    }
+
+    validated = {}
+    for field, (data_type, validator) in required_fields.items():
+        value = data.get(field)
+        if not value:
+            raise ValidationError(f'Missing required field: {field}')
+        try:
+            value = data_type(value)
+            if not validator(value):
+                raise ValueError
+        except (ValueError, TypeError):
+            raise ValidationError(f'Invalid value for {field}')
+        validated[field] = value
+
+    if validated['reorder_level'] >= validated['max_stock_level']:
+        raise ValidationError('Reorder Level must be less than Max Stock Level')
+
+    return validated
+
+
+def get_categories():
+    with get_db_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute('SELECT name FROM categories')
+        return [row['name'] for row in cursor.fetchall()]
+
+
+
 
 
 # Route for the employee dashboard
@@ -575,13 +648,14 @@ def update_account(account_id):
 
             # Authorization checks
             if current_user_role != 'owner':
-                # Non-owners can only edit accounts in their own store
-                if target_account['store_address'] != current_user_store:
-                    return jsonify({'message': 'Unauthorized to modify this account'}), 403
+                # 双重验证: session和真实数据库状态
+                cursor.execute('SELECT role FROM users WHERE id = ?', (session.get('user_id'),))
+                actual_role = cursor.fetchone()['role']
 
-                # Prevent role elevation to owner
-                if data['role'] == 'owner' and target_account['role'] != 'owner':
-                    return jsonify({'message': 'Only owners can create owner accounts'}), 403
+                if actual_role != 'owner' or session.get('role') != 'owner':
+                    # 强制同步session和数据库角色状态
+                    session['role'] = actual_role
+                    return jsonify({'message': '系统检测到权限异常，请重新登录'}), 403
 
             # Owner-specific validation
             if current_user_role == 'owner':
@@ -719,87 +793,78 @@ def delete_item(item_id):
 
 @app.route('/update_item/<int:item_id>', methods=['POST'])
 def update_item(item_id):
-    # Authorization check
     if 'authorized' not in session:
         return jsonify({'message': 'Unauthorized'}), 401
 
     current_role = session.get('role')
     current_store = session.get('store_address')
 
-    with get_db_connection() as conn:
+    try:
+        data = request.get_json()
+        required_fields = ['name', 'category', 'max_stock_level',
+                         'in_stock_level', 'reorder_level', 'supplier',
+                         'store_address']
+
+        # Validate required fields
+        for field in required_fields:
+            if field not in data:
+                return jsonify({'message': f'Missing required field: {field}'}), 400
+
+        # Convert numerical values
         try:
+            data['max_stock_level'] = int(data['max_stock_level'])
+            data['in_stock_level'] = int(data['in_stock_level'])
+            data['reorder_level'] = int(data['reorder_level'])
+        except ValueError:
+            return jsonify({'message': 'Invalid numerical values'}), 400
+
+        # Business logic validation
+        if data['reorder_level'] >= data['max_stock_level']:
+            return jsonify({'message': 'Reorder level must be less than Max Stock Level'}), 400
+
+        with get_db_connection() as conn:
             cursor = conn.cursor()
 
-            # Get existing item details
-            cursor.execute('''
-                SELECT store_address FROM items 
-                WHERE id = ?
-            ''', (item_id,))
-            item = cursor.fetchone()
+            # Check existing item store
+            cursor.execute('SELECT store_address FROM items WHERE id = ?', (item_id,))
+            existing_item = cursor.fetchone()
 
-            if not item:
+            if not existing_item:
                 return jsonify({'message': 'Item not found'}), 404
 
-            # Store validation for non-owners
-            if current_role != 'owner' and item['store_address'] != current_store:
-                return jsonify({'message': 'Unauthorized to modify items from other stores'}), 403
+            # Authorization check
+            if current_role != 'owner' and existing_item['store_address'] != current_store:
+                return jsonify({'message': 'Unauthorized to modify this item'}), 403
 
-            # Validate input data
-            data = request.json
-            required_fields = {
-                'category': str,
-                'max_stock_level': int,
-                'in_stock_level': int,
-                'reorder_level': int
-            }
-
-            if not all(field in data for field in required_fields):
-                return jsonify({'message': 'Missing required fields'}), 400
-
-            # Conversion and range validation
-            try:
-                category = str(data['category']).strip()
-                max_stock = int(data['max_stock_level'])
-                in_stock = int(data['in_stock_level'])
-                reorder = int(data['reorder_level'])
-
-                if not category or max_stock < 0 or in_stock < 0 or reorder < 0:
-                    raise ValueError("Invalid field values")
-
-                if reorder > max_stock:
-                    return jsonify({'message': 'Reorder level must be less than max stock'}), 400
-
-            except (ValueError, TypeError) as e:
-                return jsonify({'message': 'Invalid input format'}), 400
-
-            # Perform update with store validation
+            # Update item
             cursor.execute('''
                 UPDATE items SET
+                    name = ?,
                     category = ?,
                     max_stock_level = ?,
                     in_stock_level = ?,
-                    reorder_level = ?
-                WHERE id = ? AND store_address = ?
+                    reorder_level = ?,
+                    supplier = ?,
+                    store_address = ?
+                WHERE id = ?
             ''', (
-                category,
-                max_stock,
-                in_stock,
-                reorder,
-                item_id,
-                item['store_address']  # Ensures item hasn't moved since initial check
+                data['name'],
+                data['category'],
+                data['max_stock_level'],
+                data['in_stock_level'],
+                data['reorder_level'],
+                data['supplier'],
+                data['store_address'],
+                item_id
             ))
 
             conn.commit()
-
-            if cursor.rowcount == 0:
-                return jsonify({'message': 'No changes detected or item not found'}), 200
-
             return jsonify({'message': 'Item updated successfully'}), 200
 
-        except sqlite3.IntegrityError as e:
-            return jsonify({'message': 'Database constraint error'}), 500
-        except Exception as e:
-            return jsonify({'message': f'Server error: {str(e)}'}), 500
+    except sqlite3.IntegrityError as e:
+        return jsonify({'message': 'Item name already exists'}), 409
+    except Exception as e:
+        return jsonify({'message': f'Server error: {str(e)}'}), 500
 
 
 @app.route('/delete_stock_update/<int:record_id>', methods=['DELETE'])
@@ -1256,6 +1321,27 @@ def stock_update_history():
         }
         for user, data in user_history.items()
     ])
+
+@app.route('/logout')
+def logout():
+    session.clear()  # Clear all session data
+    return redirect(url_for('login'))
+
+@app.before_request
+def check_authorization():
+    if request.endpoint not in ['login', 'register', 'static']:
+        if not session.get('authorized'):
+            return redirect(url_for('login'))
+
+
+@app.after_request
+def add_header(response):
+    # Prevent caching of sensitive pages
+    if request.path.startswith('/owner_dashboard'):
+        response.headers['Cache-Control'] = 'no-store, no-cache, must-revalidate'
+        response.headers['Pragma'] = 'no-cache'
+        response.headers['Expires'] = '0'
+    return response
 
 @app.after_request
 def add_header(response):
