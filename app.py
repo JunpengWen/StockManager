@@ -17,10 +17,9 @@ VALID_STORES = [
     "Kusan Uyghur Cuisine, 1516 N 4th Street, San Jose, CA 95112",
     "Kusan Bazaar, 510 Barber Ln, Milpitas, CA 95035"
 ]
-    
+
 # Database configuration
 DATABASE = 'stock_manager.db'
-
 
 # Define the upload folder
 UPLOAD_FOLDER = 'static/uploads'  # Path to the folder where uploaded files will be saved
@@ -34,9 +33,11 @@ app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024  # Limit file size to 16MB
 if not os.path.exists(UPLOAD_FOLDER):
     os.makedirs(UPLOAD_FOLDER)
 
+
 # Helper function to validate file extensions
 def allowed_file(filename):
     return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
+
 
 def get_db_connection():
     conn = sqlite3.connect(DATABASE)
@@ -58,14 +59,15 @@ def init_db():
         # Create tables with proper store_address fields
         cursor.execute('''CREATE TABLE IF NOT EXISTS items (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
-            name TEXT UNIQUE,
+            name TEXT NOT NULL,  
             category TEXT,
             max_stock_level INTEGER,
             in_stock_level INTEGER,
             reorder_level INTEGER,
             picture TEXT,
             supplier TEXT,
-            store_address TEXT NOT NULL  -- Store-specific items
+            store_address TEXT NOT NULL,
+            UNIQUE(name, store_address)  -- Add composite constraint
         )''')
 
         # Keep original categories table structure
@@ -125,9 +127,11 @@ def init_db():
         cursor.execute('UPDATE users SET is_authorized = 1 WHERE role = "owner"')
         conn.commit()
 
+
 # Auto-initialize database when the app starts
 with app.app_context():
     init_db()  # Checks and creates tables if missing
+
 
 # Route for the login page
 @app.route('/', methods=['GET', 'POST'])
@@ -148,18 +152,19 @@ def login():
 
                 if not user:
                     return render_template('userlogin.html',
-                         error_message='Invalid username or password')
+                                           error_message='Invalid username or password')
 
                 if user['is_authorized'] == 0:
                     return render_template('userlogin.html',
-                         error_message='Account pending authorization')
+                                           error_message='Account pending authorization')
 
                 # Store critical user info in session
                 session.update({
                     'user_id': user['id'],
                     'role': user['role'],
                     'store_address': user['store_address'],
-                    'authorized': True
+                    'authorized': True,
+                    '_csrf_validated': True  # Explicit CSRF validation marker
                 })
 
                 # Debug log
@@ -177,7 +182,7 @@ def login():
 
         except Exception as e:
             return render_template('userlogin.html',
-                 error_message=f'Login error: {str(e)}')
+                                   error_message=f'Login error: {str(e)}')
 
     return render_template('userlogin.html')
 
@@ -313,6 +318,7 @@ def reject_account(account_id):
 
         return jsonify({'message': 'Account rejected successfully'}), 200
 
+
 # Route for the owner dashboard
 @app.route('/owner_dashboard', methods=['GET', 'POST'])
 def owner_dashboard():
@@ -388,12 +394,14 @@ def save_uploaded_file(file):
         return filename  # Returns relative path to stored file
     return None
 
+
 def handle_error(message, status_code):
     if request.is_json:
         return jsonify({'message': message}), status_code
     else:
         flash(message, 'error')
         return redirect(url_for('owner_dashboard'))
+
 
 def handle_owner_get_request():
     store_filter = request.args.get('store', '')
@@ -445,6 +453,17 @@ def validate_item_data(data):
     if validated['reorder_level'] >= validated['max_stock_level']:
         raise ValidationError('Reorder Level must be less than Max Stock Level')
 
+    with get_db_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute('''
+            SELECT id FROM items
+            WHERE name = ? AND store_address = ?
+        ''', (validated['name'], validated['store_address']))
+        if cursor.fetchone():
+            raise ValidationError(
+                f"Item '{validated['name']}' already exists in {validated['store_address']}"
+            )
+
     return validated
 
 
@@ -453,9 +472,6 @@ def get_categories():
         cursor = conn.cursor()
         cursor.execute('SELECT name FROM categories')
         return [row['name'] for row in cursor.fetchall()]
-
-
-
 
 
 # Route for the employee dashboard
@@ -495,6 +511,7 @@ def manager_dashboard():
         items = cursor.fetchall()
 
     return render_template('manager_dashboard.html', items=items)
+
 
 # Route for managing categories
 @app.route('/categories', methods=['GET', 'POST'])
@@ -716,35 +733,32 @@ def update_account(account_id):
 
 @app.route('/items', methods=['GET'])
 def get_items():
+    store_filter = request.args.get('store')
+
     base_query = 'SELECT * FROM items'
-    filter_clauses = []
     params = []
 
-    if session.get('role') != 'owner':
-        # Non-owners only see their store's items
-        filter_clauses.append('store_address = ?')
-        params.append(session.get('store_address'))
-    else:
-        # Owners can filter by store if specified
-        store_filter = request.args.get('store')
-        if store_filter:
-            filter_clauses.append('store_address = ?')
-            params.append(store_filter)
-
-    # Build final query
-    if filter_clauses:
-        base_query += ' WHERE ' + ' AND '.join(filter_clauses)
+    # 添加多店铺过滤
+    if store_filter and store_filter.lower() != 'all':
+        base_query += ' WHERE store_address = ?'
+        params.append(store_filter)
 
     with get_db_connection() as conn:
         cursor = conn.cursor()
         cursor.execute(base_query, params)
         items = cursor.fetchall()
-        items_list = [dict(item) for item in items]
 
-    # Debug: Print items to console
-    print("Items returned from /items endpoint:", items_list)
+    return jsonify([dict(item) for item in items])
 
-    return jsonify(items_list)
+@app.route('/items/<int:item_id>', methods=['GET'])
+def get_item(item_id):
+    with get_db_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute('SELECT * FROM items WHERE id = ?', (item_id,))
+        item = cursor.fetchone()
+        if not item:
+            return jsonify({'message': 'Item not found'}), 404
+        return jsonify(dict(item))  # 确保返回JSON格式
 
 
 @app.route('/delete_item/<int:item_id>', methods=['POST'])
@@ -793,6 +807,8 @@ def delete_item(item_id):
 
 @app.route('/update_item/<int:item_id>', methods=['POST'])
 def update_item(item_id):
+    if not request.is_json:
+        return jsonify({'message': 'Only JSON format data is accepted'}), 400
     if 'authorized' not in session:
         return jsonify({'message': 'Unauthorized'}), 401
 
@@ -802,8 +818,8 @@ def update_item(item_id):
     try:
         data = request.get_json()
         required_fields = ['name', 'category', 'max_stock_level',
-                         'in_stock_level', 'reorder_level', 'supplier',
-                         'store_address']
+                           'in_stock_level', 'reorder_level', 'supplier',
+                           'store_address']
 
         # Validate required fields
         for field in required_fields:
@@ -812,6 +828,7 @@ def update_item(item_id):
 
         # Convert numerical values
         try:
+            data = request.get_json()
             data['max_stock_level'] = int(data['max_stock_level'])
             data['in_stock_level'] = int(data['in_stock_level'])
             data['reorder_level'] = int(data['reorder_level'])
@@ -865,6 +882,11 @@ def update_item(item_id):
         return jsonify({'message': 'Item name already exists'}), 409
     except Exception as e:
         return jsonify({'message': f'Server error: {str(e)}'}), 500
+    except Exception as e:
+        return jsonify({'message': 'Invalid JSON data format'}), 400
+    except (KeyError, sqlite3.IntegrityError) as e:
+        return jsonify({'message': 'Database operation failed', 'error': str(e)}), 500
+
 
 
 @app.route('/delete_stock_update/<int:record_id>', methods=['DELETE'])
@@ -1322,16 +1344,22 @@ def stock_update_history():
         for user, data in user_history.items()
     ])
 
+
 @app.route('/logout')
 def logout():
     session.clear()  # Clear all session data
     return redirect(url_for('login'))
 
+
 @app.before_request
 def check_authorization():
     if request.endpoint not in ['login', 'register', 'static']:
-        if not session.get('authorized'):
+        # Enhanced security checks
+        if not all(key in session for key in ('user_id', 'role', 'store_address', '_csrf_validated')):
+            session.clear()
             return redirect(url_for('login'))
+        # Rotating session token for security
+        session['_csrf_validated'] = os.urandom(24).hex()
 
 
 @app.after_request
@@ -1343,12 +1371,14 @@ def add_header(response):
         response.headers['Expires'] = '0'
     return response
 
+
 @app.after_request
 def add_header(response):
     response.headers['Cache-Control'] = 'no-store, no-cache, must-revalidate, max-age=0'
     response.headers['Pragma'] = 'no-cache'
     response.headers['Expires'] = '0'
     return response
+
 
 if __name__ == '__main__':
     app.run(debug=True)
