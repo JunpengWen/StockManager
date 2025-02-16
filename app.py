@@ -277,6 +277,47 @@ def pending_accounts():
     return jsonify(accounts)
 
 
+# 添加新的路由：获取单个账户详细信息（包含密码）
+@app.route('/account/<int:account_id>', methods=['GET'])
+def get_account_detail(account_id):
+    # 验证登录状态
+    if 'authorized' not in session:
+        return jsonify({'message': 'Unauthorized'}), 401
+
+    # 获取请求者权限
+    current_role = session.get('role')
+    current_store = session.get('store_address')
+
+    with get_db_connection() as conn:
+        cursor = conn.cursor()
+
+        # 查询目标账户
+        cursor.execute('''
+            SELECT * FROM users
+            WHERE id = ?
+        ''', (account_id,))
+        account = cursor.fetchone()
+
+        if not account:
+            return jsonify({'message': 'Account not found'}), 404
+
+        # 权限验证：owner可以查看所有，其他人只能查看自己门店的账户
+        if current_role != 'owner' and account['store_address'] != current_store:
+            return jsonify({'message': 'Unauthorized access'}), 403
+
+        # 返回完整账户信息（包含明文密码）
+        return jsonify({
+            'id': account['id'],
+            'username': account['username'],
+            'role': account['role'],
+            'employee_name': account['employee_name'],
+            'store_address': account['store_address'],
+            'phone_number': account['phone_number'],
+            'email': account['email'],
+            'password': account['password']  # 返回明文密码
+        }), 200
+
+
 @app.route('/authorize_account/<int:account_id>', methods=['POST'])
 def authorize_account(account_id):
     with get_db_connection() as conn:
@@ -731,23 +772,22 @@ def update_account(account_id):
             return jsonify({'message': f'Server error: {str(e)}'}), 500
 
 
-@app.route('/items', methods=['GET'])
+@app.route('/items')
 def get_items():
-    store_filter = request.args.get('store')
+    # Authorization check added
+    if 'authorized' not in session:
+        return jsonify({'message': 'Unauthorized'}), 401
 
-    base_query = 'SELECT * FROM items'
-    params = []
-
-    # 添加多店铺过滤
-    if store_filter and store_filter.lower() != 'all':
-        base_query += ' WHERE store_address = ?'
-        params.append(store_filter)
+    store_filter = request.args.get('store', 'all')
 
     with get_db_connection() as conn:
         cursor = conn.cursor()
-        cursor.execute(base_query, params)
-        items = cursor.fetchall()
+        if store_filter.lower() != 'all' and store_filter in VALID_STORES:
+            cursor.execute('SELECT * FROM items WHERE store_address = ?', (store_filter,))
+        else:
+            cursor.execute('SELECT * FROM items')
 
+        items = cursor.fetchall()
     return jsonify([dict(item) for item in items])
 
 @app.route('/items/<int:item_id>', methods=['GET'])
@@ -763,6 +803,7 @@ def get_item(item_id):
 
 @app.route('/delete_item/<int:item_id>', methods=['POST'])
 def delete_item(item_id):
+    print(f"DELETE request received for item_id: {item_id}")
     if not session.get('authorized'):
         return jsonify({'message': 'Unauthorized'}), 401
 

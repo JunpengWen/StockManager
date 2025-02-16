@@ -104,6 +104,8 @@
             </div>
         </nav>
 
+        <div id="contextUpdateError" class="alert alert-danger d-none mb-3"></div>
+
 
 
         <!-- 找到现有的 Add Inventory Item 模态框，修改为以下内容 -->
@@ -430,6 +432,10 @@
                                 <input type="email" class="form-control" id="editEmail" required>
                             </div>
                             <div class="col-12">
+                                    <label class="form-label">Current Password</label>
+                                    <input type="text" class="form-control" id="currentPassword" readonly>
+                            </div>
+                            <div class="col-12">
                                 <div class="form-check">
                                     <input class="form-check-input" type="checkbox" id="editResetPassword">
                                     <label class="form-check-label" for="editResetPassword">
@@ -588,7 +594,6 @@
 
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0-alpha3/dist/js/bootstrap.bundle.min.js"></script>
     <script>
-
 
         let currentEditStore = '';
 
@@ -932,14 +937,12 @@
         }
 
         async function openEditModal(accountId) {
+            try {
+                const response = await fetch(`/account/${accountId}`);
+                if (!response.ok) throw new Error('Failed to fetch account data');
+                const account = await response.json();
 
-            const currentUserRole = document.body.dataset.userRole || 'owner';
-
-            const response = await fetch(`/accounts`);
-            const data = await response.json();
-            const account = data.authorized_accounts.find(a => a.id === accountId);
-
-            if (account) {
+                // 填充表单字段
                 document.getElementById('editAccountId').value = account.id;
                 document.getElementById('editUsername').value = account.username;
                 document.getElementById('editRole').value = account.role;
@@ -948,11 +951,17 @@
                 document.getElementById('editPhone').value = account.phone_number;
                 document.getElementById('editEmail').value = account.email;
 
-                // 动态启用或禁用Role字段
+                // 显示当前密码
+                document.getElementById('currentPassword').value = account.password;
+
+                // 角色字段权限控制
                 const roleField = document.getElementById('editRole');
-                roleField.disabled = (currentUserRole !== 'owner');
+                roleField.disabled = (document.body.dataset.userRole !== 'owner');
 
                 new bootstrap.Modal(document.getElementById('editAccountModal')).show();
+
+            } catch (error) {
+                alert(`Error: ${error.message}`);
             }
         }
 
@@ -1156,100 +1165,50 @@
         // Store Management
         async function updateStoreContext(storeAddress) {
             const header = document.querySelector('.navbar-brand');
-            const currentStoreElement = document.getElementById('currentStore');
-            const statsContainer = document.getElementById('storeStatsContainer');
+            const storeStatusElement = document.getElementById('currentStore');
 
-
-            // Clear previous content immediately
-            statsContainer.innerHTML = '<div class="col-12 text-center">Loading store data...</div>';
+            // Safe element update
+            if (storeStatusElement) {
+                storeStatusElement.textContent = storeAddress.split(',')[0] || 'All Stores';
+            }
 
             try {
-                if (storeAddress === 'all') {
-                    header.textContent = 'All Stores Overview';
-                    const allStores = JSON.parse(document.getElementById('storeStatsContainer').dataset.stores);
+                // Clear previous data first
+                document.getElementById('multiStoreItemList').innerHTML = '<tr><td colspan="6">Loading...</td></tr>';
 
-                    const storeCards = await Promise.all(allStores.map(async store => {
-                        const stats = await fetchStoreStats(store);
-                        return `
-                            <div class="col-md-6 col-xl-4">
-                                <div class="card store-card" data-store="${store}">
-                                    <div class="card-body">
-                                        <h5 class="card-title">${store.split(',')[0]}</h5>
-                                        <div class="store-metrics">
-                                            <div class="metric-item">
-
-                                                <span class="metric-value">${stats.totalItems}</span>
-                                            </div>
-                                            <div class="metric-item ${stats.lowStockItems > 0 ? 'text-danger' : ''}">
-                                                <span class="metric-label">Low Stock:</span>
-                                                <span class="metric-value">${stats.lowStockItems}</span>
-                                            </div>
-                                            <div class="metric-item">
-                                                <span class="metric-label">Recent Updates:</span>
-                                                <span class="metric-value">${stats.recentUpdates}</span>
-                                            </div>
-                                        </div>
-                                        <div class="store-actions mt-3">
-                                            <button class="btn btn-sm btn-primary" onclick="manageStore('${store}')">
-                                                Manage Inventory
-                                            </button>
-                                            <button class="btn btn-sm btn-secondary" onclick="viewStoreReports('${store}')">
-                                                View Reports
-                                            </button>
-                                        </div>
-                                    </div>
-                                </div>
-                            </div>`;
-                    }));
-
-                    statsContainer.innerHTML = storeCards.join('');
-                } else {
-                    const stats = await fetchStoreStats(storeAddress);
-                    header.textContent = `${storeAddress.split(',')[0]} Management`;
-                    statsContainer.innerHTML = `
-                        <div class="col-12">
-                            <div class="card store-card">
-                                <div class="card-body">
-                                    <h3 class="card-title">${storeAddress.split(',')[0]}</h3>
-                                    <div class="row">
-                                        <div class="col-md-4">${renderMetrics(stats)}</div>
-                                        <div class="col-md-8">
-                                            ${await renderAdditionalStoreInfo(storeAddress)}
-                                        </div>
-                                    </div>
-                                    ${renderStoreActions(storeAddress)}
-                                </div>
-                            </div>
-                        </div>`;
-                }
-
-                // Update dependent components
-                document.getElementById('warningStoreFilter').value = storeAddress;
-                document.getElementById('checklistStoreFilter').value = storeAddress;
-                fetchStockWarnings();
-                loadStoreCategories(storeAddress);
-                loadPendingAccounts();
-                loadAccountManagement();
+                // Load dependent systems
+                await Promise.all([
+                    fetchStockWarnings(),
+                    loadStoreCategories(storeAddress),
+                    loadPendingAccounts(),
+                    loadAccountManagement()
+                ]);
 
             } catch (error) {
                 console.error('Error updating store context:', error);
-                statsContainer.innerHTML = '<div class="col-12 text-danger">Error loading store data</div>';
+                // Show error in UI
+                const errorElement = document.getElementById('contextUpdateError');
+                if (errorElement) {
+                    errorElement.textContent = `Error: ${error.message}`;
+                }
             }
         }
 
         async function fetchStoreStats(storeAddress) {
             try {
+                // Use storeAddress directly instead of reference from dataset
                 const response = await fetch(`/items?store=${encodeURIComponent(storeAddress)}`);
                 const items = await response.json();
+
                 const historyResponse = await fetch(`/stock_update_history?store=${encodeURIComponent(storeAddress)}`);
                 const updates = await historyResponse.json();
 
                 return {
                     totalItems: items.length,
                     lowStockItems: items.filter(item => item.in_stock_level <= item.reorder_level).length,
-                    recentUpdates: updates.flatMap(user => user.records).length,
-                    totalValue: items.reduce((sum, item) => sum + (item.in_stock_level * item.unit_price), 0)
+                    recentUpdates: updates.flatMap(user => user.records).length
                 };
+
             } catch (error) {
                 console.error('Error fetching store stats:', error);
                 return null;
@@ -1266,7 +1225,9 @@
                         ? '/items'
                         : `/items?store=${encodeURIComponent(storeFilter)}`;
 
-                const response = await fetch(url);
+                const response = await fetch(url, {
+                    credentials: 'include' // Include session cookies
+                });
                 const items = await response.json();
 
                 // 自动包含统计信息
@@ -1388,44 +1349,34 @@
                             onclick="openItemEditModal(${item.id})">
                         Edit
                     </button>
+
                 </div>`;
         }
 
+
+
         // Checklist & Inventory Management
         async function loadStoreCategories(storeAddress) {
+            const categoryDropdown = document.getElementById('ownerCategoryDropdown');
+
             try {
-                // Add null check for dropdown element
-                const categoryDropdown = document.getElementById('ownerCategoryDropdown');
-                if (!categoryDropdown) {
-                    console.error('Category dropdown not found!');
-                    return;
-                }
-
-                const url = storeAddress === 'all'
-                    ? '/items'
-                    : `/items?store=${encodeURIComponent(storeAddress)}`;
-
-                const response = await fetch(url);
+                const response = await fetch(`/items?store=${encodeURIComponent(storeAddress)}`);
                 const items = await response.json();
 
-                // Remove problematic store filtering
-                const storeItems = items;
-
-                const categories = [...new Set(storeItems.map(item => item.category))]
-                                  .filter(Boolean) // Remove null/undefined categories
+                const categories = [...new Set(items.map(item => item.category))]
+                                  .filter(c => c) // Remove empty/undefined
                                   .sort();
 
-                // Update category dropdown
-                categoryDropdown.innerHTML = categories.map(c => `
-                    <option value="${c}">${c}</option>
-                `).join('');
+                categoryDropdown.innerHTML = categories.map(c =>
+                    `<option value="${c}">${c}</option>`
+                ).join('');
                 categoryDropdown.disabled = false;
 
-                loadStoreItems(); // Load items after categories update
+                // Initialize items list after categories load
+                loadStoreItems();
 
             } catch (error) {
-                console.error('Error loading categories:', error);
-                const categoryDropdown = document.getElementById('ownerCategoryDropdown');
+                console.error('Category load error:', error);
                 categoryDropdown.innerHTML = '<option value="">Error loading categories</option>';
             }
         }
@@ -1440,8 +1391,12 @@
                 const filteredItems = category ? items.filter(item => item.category === category) : items;
 
                 const tbody = document.getElementById('multiStoreItemList');
+                if (!tbody) {
+                    console.error('Inventory table body not found');
+                    return;
+                }
                 tbody.innerHTML = filteredItems.map(item => `
-                    <tr>
+                    <tr data-item-id="${item.id}">
                         <td>${item.name}</td>
                         <td>${item.category}</td>
                         <td>${item.in_stock_level}</td>
@@ -1456,6 +1411,10 @@
                                     onclick="openItemEditModal(${item.id})">
                                 Edit
                             </button>
+                            <button class="btn btn-sm btn-danger ms-2"
+                                    onclick="confirmDeleteItem(${item.id}, '${item.name.replace(/'/g, "\\'")}')">
+                                            Delete
+                            </button>
                         </td>
                     </tr>
                 `).join('');
@@ -1463,6 +1422,38 @@
                 document.getElementById('multiStoreItemSection').classList.remove('d-none');
             } catch (error) {
                 console.error('Error loading items:', error);
+            }
+        }
+
+        async function confirmDeleteItem(itemId, itemName) {
+            if (!confirm(`Permanently delete "${itemName}" ? This cannot be undone!`))
+            return;
+
+            try {
+                const response = await fetch(`/delete_item/${itemId}`, {
+                    method: 'POST'
+                });
+
+                if (!response.ok) {
+                    const contentType = response.headers.get('content-type');
+
+                    if (contentType && contentType.includes('application/json')) {
+                        const error = await response.json();
+                        throw new Error(error.message);
+                    } else {
+                        const textError = await response.text();
+                        throw new Error(`
+                            Server error: ${textError}`);
+                    }
+                }
+
+                const row = document.querySelector(`tr[data-item-id="${itemId}"]`);
+                if (row) row.remove();
+                alert('Item deleted successfully!');
+            } catch (error) {
+                console.error('Deletion error details:', error);
+                alert(`
+                            Deletion failed: ${error.message}`);
             }
         }
 
@@ -1490,17 +1481,31 @@
         }
 
         // Initialization
-        document.addEventListener('DOMContentLoaded', () => {
-            document.getElementById('storeStatsContainer').dataset.stores = JSON.stringify({{ valid_stores|safe }});
-            loadAccountManagement();
+        document.addEventListener('DOMContentLoaded', async () => {
+            try {
 
-            const urlParams = new URLSearchParams(window.location.search);
-            const initialStore = urlParams.get('store') || 'all';
-            document.getElementById('storeSwitch').value = initialStore;
+                // Get store filter elements from the actual HTML
+                const storeFilter = document.getElementById('checklistStoreFilter');
+                const warningFilter = document.getElementById('warningStoreFilter');
 
-            updateStoreContext(initialStore);
-            fetchStockWarnings();
-            loadPendingAccounts();
+                const urlParams = new URLSearchParams(window.location.search);
+                const initialStore = urlParams.get('store') || 'all';
+
+                // Set both filter dropdowns
+                if (storeFilter) storeFilter.value = initialStore;
+                if (warningFilter) warningFilter.value = initialStore;
+
+                // Load initial data
+                await Promise.all([
+                    fetchStockWarnings(),
+                    loadStoreCategories(initialStore),
+                    loadPendingAccounts(),
+                    loadAccountManagement()
+                ]);
+
+            } catch (error) {
+                console.error('Initialization error:', error);
+            }
         });
 
         // Utility Functions
@@ -1524,25 +1529,7 @@
         // Global Store Context Management
         const validStores = JSON.parse('{{ valid_stores|tojson|safe }}');
 
-        async function loadStoreStatistics() {
-            const statsContainer = document.getElementById('storeStatsContainer');
-            statsContainer.innerHTML = '<div class="col-12 text-center">Loading store data...</div>';
 
-            try {
-                if (currentStoreContext === 'all') {
-                    const storeCards = await Promise.all(validStores.map(async store => {
-                        const stats = await fetchStoreStats(store);
-                        return generateStoreCard(store, stats);
-                    }));
-                    statsContainer.innerHTML = storeCards.join('');
-                } else {
-                    const stats = await fetchStoreStats(currentStoreContext);
-                    statsContainer.innerHTML = generateSingleStoreView(currentStoreContext, stats);
-                }
-            } catch (error) {
-                statsContainer.innerHTML = '<div class="col-12 text-danger">Error loading store data</div>';
-            }
-        }
 
         function generateStoreCard(storeAddress, stats) {
             return `
@@ -1839,6 +1826,20 @@
                 document.getElementById('ownerCategoryDropdown').selectedIndex = 0;
                 loadStoreCategories(this.value);
             });
+        });
+
+        document.addEventListener('DOMContentLoaded', () => {
+            const storeFilter = document.getElementById('checklistStoreFilter');
+            if (storeFilter) {
+                storeFilter.addEventListener('change', function() {
+                    loadStoreCategories(this.value);
+                });
+            }
+
+            // Initial load
+            if (storeFilter && storeFilter.value) {
+                loadStoreCategories(storeFilter.value);
+            }
         });
 
         function confirmExit() {
