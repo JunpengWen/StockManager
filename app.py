@@ -518,6 +518,7 @@ def get_categories():
 # Route for the employee dashboard
 @app.route('/employee_dashboard')
 def employee_dashboard():
+    current_store = session.get('store_address')
     with get_db_connection() as conn:
         cursor = conn.cursor()
 
@@ -531,7 +532,10 @@ def employee_dashboard():
         cursor.execute(base_query, params)
         items = cursor.fetchall()
 
-    return render_template('employee_dashboard.html', items=items)
+    return render_template('employee_dashboard.html',
+                           items=items,
+                           current_store=current_store  # Add this
+                           )
 
 
 @app.route('/manager_dashboard')
@@ -774,20 +778,34 @@ def update_account(account_id):
 
 @app.route('/items')
 def get_items():
-    # Authorization check added
     if 'authorized' not in session:
         return jsonify({'message': 'Unauthorized'}), 401
 
-    store_filter = request.args.get('store', 'all')
+    current_role = session.get('role')
+    current_store = session.get('store_address')
+
+    # Role-based store filtering
+    if current_role != 'owner':
+        # Non-owners always get their store's items
+        query = 'SELECT * FROM items WHERE store_address = ?'
+        params = [current_store]
+    else:
+        # Owner logic with store parameter validation
+        store_filter = request.args.get('store', 'all')
+        if store_filter.lower() == 'all':
+            query = 'SELECT * FROM items'
+            params = []
+        elif store_filter in VALID_STORES:
+            query = 'SELECT * FROM items WHERE store_address = ?'
+            params = [store_filter]
+        else:
+            return jsonify({'message': 'Invalid store filter'}), 400
 
     with get_db_connection() as conn:
         cursor = conn.cursor()
-        if store_filter.lower() != 'all' and store_filter in VALID_STORES:
-            cursor.execute('SELECT * FROM items WHERE store_address = ?', (store_filter,))
-        else:
-            cursor.execute('SELECT * FROM items')
-
+        cursor.execute(query, params)
         items = cursor.fetchall()
+
     return jsonify([dict(item) for item in items])
 
 @app.route('/items/<int:item_id>', methods=['GET'])

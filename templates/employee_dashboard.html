@@ -91,11 +91,12 @@
 
 <!-- JavaScript -->
 <script>
-    // Get current store reference
-    const currentStore = sessionStorage.getItem('currentStore') || "Current Store";
+    // Initialize store info from server template
+    const currentStore = "{{ session.store_address }}";  // Get from server session
 
-    // Set store indicator
-    document.getElementById('currentStore').textContent = currentStore;
+    // Set visual indicators
+    document.getElementById('currentStore').textContent = currentStore.split(',')[0] || "Current Store";
+    sessionStorage.removeItem('currentStore');  // Remove legacy storage
 
     // Fetch store-specific categories
     async function fetchCategoriesForEmployee() {
@@ -132,10 +133,7 @@
         try {
             const response = await fetch('/items');
             const items = await response.json();
-            const filteredItems = items.filter(item =>
-                item.category === category &&
-                item.store_address === currentStore
-            );
+            const filteredItems = items.filter(item => item.category === category);
 
             const auditTableBody = document.getElementById('auditTableBody');
             auditTableBody.innerHTML = '';
@@ -211,19 +209,18 @@
                     headers: {'Content-Type': 'application/json'},
                     body: JSON.stringify({
                         in_stock_level: update.stock,
-                        store_address: currentStore // Pass current store for validation
+                        store_address: currentStore
                     }),
                 });
 
                 const data = await response.json();
                 if (response.ok) {
-                    // Update displayed stock value
                     const stockCell = document.querySelector(`#correctedStock_${update.itemId}`)
                         .closest('tr').querySelector('td:nth-child(4)');
                     stockCell.textContent = update.stock;
 
-                    if (data.warning) {
-                        warnings.push(data.warning);
+                    if (data.warning && data.warning.message) {  // Modified line
+                        warnings.push(data.warning.message);     // Modified line
                     }
                 } else {
                     alert(`Failed to update item ID ${update.itemId}: ${data.message}`);
