@@ -61,6 +61,15 @@
         .bi {
             margin-right: 0.3rem;
         }
+        #ownerHistoryBody tr:hover {
+            background-color: #f8f9fa;
+            transition: background-color 0.2s ease;
+        }
+
+        .table-responsive {
+            max-height: 500px;
+            overflow-y: auto;
+        }
     </style>
 </head>
 
@@ -380,7 +389,21 @@
         <!-- Stock History -->
         <div class="card p-3">
             <h3>Stock Update History</h3>
-            <div id="updateHistoryList" class="list-group"></div>
+            <div class="table-responsive">
+                <table class="table table-striped">
+                    <thead>
+                        <tr>
+                            <th>Date</th>
+                            <th>Item</th>
+                            <th>User</th>
+                            <th>Store</th>
+                            <th>Before</th>
+                            <th>After</th>
+                        </tr>
+                    </thead>
+                    <tbody id="ownerHistoryBody"></tbody>
+                </table>
+            </div>
         </div>
     </div>
 
@@ -1841,6 +1864,46 @@
                 loadStoreCategories(storeFilter.value);
             }
         });
+
+        async function loadOwnerHistory() {
+            try {
+                const storeFilter = document.getElementById('checklistStoreFilter').value;
+                const response = await fetch(`/stock_update_history?store=${encodeURIComponent(storeFilter)}`);
+
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
+
+                const history = await response.json();
+                const tbody = document.getElementById('ownerHistoryBody');
+
+                tbody.innerHTML = history.flatMap(user =>
+                    user.records.map(record => `
+                        <tr>
+                            <td>${new Date(record.updated_at).toLocaleString()}</td>
+                            <td>${record.item_name}</td>
+                            <td>${user.username}</td>
+                            <td>${record.store_address}</td>
+                            <td>${record.stock_before}</td>
+                            <td>${record.stock_after}</td>
+                        </tr>
+                    `).join('')
+                ).join('');
+            } catch (error) {
+                console.error('Error loading owner history:', error);
+                document.getElementById('contextUpdateError').classList.remove('d-none');
+                document.getElementById('contextUpdateError').textContent =
+                    `Error loading history: ${error.message}`;
+            }
+        }
+
+        // Initialize history on page load
+        document.addEventListener('DOMContentLoaded', () => {
+            loadOwnerHistory();
+        });
+
+        // Refresh history when store filter changes
+        document.getElementById('checklistStoreFilter').addEventListener('change', loadOwnerHistory);
 
         function confirmExit() {
             if (confirm('Are you sure you want to log out?')) {
