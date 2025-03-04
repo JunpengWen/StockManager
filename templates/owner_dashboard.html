@@ -70,6 +70,14 @@
             max-height: 500px;
             overflow-y: auto;
         }
+        .table th {
+            vertical-align: middle;
+            text-align: center;
+        }
+        .table td {
+            text-align: center;
+            vertical-align: middle;
+        }
     </style>
 </head>
 
@@ -387,22 +395,11 @@
         </div>
 
         <!-- Stock History -->
+        <!-- Stock History -->
         <div class="card p-3">
             <h3>Stock Update History</h3>
-            <div class="table-responsive">
-                <table class="table table-striped">
-                    <thead>
-                        <tr>
-                            <th>Date</th>
-                            <th>Item</th>
-                            <th>User</th>
-                            <th>Store</th>
-                            <th>Before</th>
-                            <th>After</th>
-                        </tr>
-                    </thead>
-                    <tbody id="ownerHistoryBody"></tbody>
-                </table>
+            <div class="accordion" id="historyAccordion">
+                <!-- Accordion items will be dynamically inserted here -->
             </div>
         </div>
     </div>
@@ -1865,35 +1862,111 @@
             }
         });
 
+        async function deleteSingleRecord(recordId) {
+            if (!confirm('Are you sure you want to delete this record?')) return;
+
+            try {
+                const response = await fetch(`/delete_stock_update/${recordId}`, {
+                    method: 'DELETE'
+                });
+
+                if (response.ok) {
+                    const result = await response.json();
+                    if (result.message === 'Stock update deleted successfully') {
+                        loadOwnerHistory(); // Reload history data
+                    }
+                } else {
+                    const error = await response.json();
+                    showHistoryError(error.message || 'Failed to delete record');
+                }
+            } catch (error) {
+                showHistoryError('Network Error: ' + error.message);
+            }
+        }
+
+        function showHistoryError(message) {
+            const errorDiv = document.getElementById('contextUpdateError');
+            errorDiv.textContent = message;
+            errorDiv.classList.remove('d-none');
+            setTimeout(() => errorDiv.classList.add('d-none'), 3000);
+        }
+
         async function loadOwnerHistory() {
             try {
                 const storeFilter = document.getElementById('checklistStoreFilter').value;
                 const response = await fetch(`/stock_update_history?store=${encodeURIComponent(storeFilter)}`);
 
-                if (!response.ok) {
-                    throw new Error(`HTTP error! status: ${response.status}`);
-                }
+                if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
 
-                const history = await response.json();
-                const tbody = document.getElementById('ownerHistoryBody');
+                const userHistoryList = await response.json();
+                const accordionContainer = document.getElementById('historyAccordion');
+                accordionContainer.innerHTML = ''; // 清空现有内容
 
-                tbody.innerHTML = history.flatMap(user =>
-                    user.records.map(record => `
-                        <tr>
+                userHistoryList.forEach((userHistory, index) => {
+                    const user = userHistory.username;
+                    const collapseId = `userCollapse${index}`;
+
+                    const accordionItem = document.createElement('div');
+                    accordionItem.className = 'accordion-item';
+                    accordionItem.innerHTML = `
+                        <h2 class="accordion-header">
+                            <button class="accordion-button"
+                                    type="button"
+                                    data-bs-toggle="collapse"
+                                    data-bs-target="#${collapseId}">
+                                ${user} (${userHistory.records.length} updates)
+                            </button>
+                        </h2>
+                        <div id="${collapseId}" class="accordion-collapse collapse show">
+                            <div class="accordion-body p-0">
+                                <div class="table-responsive">
+                                    <table class="table table-sm table-hover">
+                                        <thead>
+                                            <tr>
+                                                <th>Date</th>
+                                                <th>Item</th>
+                                                <th>Store</th>
+                                                <th>Before</th>
+                                                <th>After</th>
+                                                <th>Δ Change</th>
+                                                <th>Actions</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            ${userHistory.records.map(record => `
+                            <tr>
                             <td>${new Date(record.updated_at).toLocaleString()}</td>
-                            <td>${record.item_name}</td>
-                            <td>${user.username}</td>
-                            <td>${record.store_address}</td>
-                            <td>${record.stock_before}</td>
-                            <td>${record.stock_after}</td>
-                        </tr>
-                    `).join('')
-                ).join('');
+                                                <td>${record.item_name}</td>
+                                                <td>${record.store_address.split(',')[0]}</td>
+                                                <td>${record.stock_before}</td>
+                                                <td>${record.stock_after}</td>
+                                                <td class="${record.stock_after > record.stock_before
+                            ? 'text-success' : 'text-danger'}">
+                                                    ${record.stock_after - record.stock_before}
+                                                </td>
+                                                <td>
+                                                    <button class="btn btn-outline-danger btn-sm"
+                                                            onclick="deleteSingleRecord(${record.id})"
+                                                            title="Delete Record">
+                                                        <i class="bi bi-trash"></i>
+                                                    </button>
+                                                </td>
+                                            </tr>
+                                            `).join('')}
+                                        </tbody>
+                                    </table>
+                            </div>
+                    </div>
+            </div>
+                `;
+                    accordionContainer.appendChild(accordionItem);
+                });
+
             } catch (error) {
-                console.error('Error loading owner history:', error);
-                document.getElementById('contextUpdateError').classList.remove('d-none');
-                document.getElementById('contextUpdateError').textContent =
-                    `Error loading history: ${error.message}`;
+                console.error('Error loading history:', error);
+                const errorDiv = document.getElementById('contextUpdateError');
+                errorDiv.textContent = `Error loading history: ${error.message}`;
+                errorDiv.classList.remove('d-none');
             }
         }
 

@@ -66,11 +66,11 @@
                 <tr>
                     <th>ID</th>
                     <th>Name</th>
+                    <th>Update Stock</th>
                     <th>Category</th>
                     <th>Current Stock</th>
                     <th>Supplier</th>
                     <th>Picture</th>
-                    <th>Update Stock</th>
                 </tr>
                 </thead>
                 <tbody id="auditTableBody">
@@ -152,6 +152,11 @@
                         <tr>
                             <td>${item.id}</td>
                             <td>${item.name}</td>
+                            <td>
+                                <input type="number" id="correctedStock_${item.id}"
+                                       class="form-control form-control-sm"
+                                       value="${item.in_stock_level}" min="0">
+                            </td>
                             <td>${item.category}</td>
                             <td>${item.in_stock_level}</td>
                             <td>${item.supplier || 'N/A'}</td>
@@ -160,11 +165,6 @@
                                     `<img src="${item.picture}" alt="${item.name}"
                                        style="width: 50px; height: 50px;">` :
                                     'No Picture'}
-                            </td>
-                            <td>
-                                <input type="number" id="correctedStock_${item.id}"
-                                       class="form-control form-control-sm"
-                                       value="${item.in_stock_level}" min="0">
                             </td>
                         </tr>
                     `;
@@ -216,7 +216,7 @@
                 const data = await response.json();
                 if (response.ok) {
                     const stockCell = document.querySelector(`#correctedStock_${update.itemId}`)
-                        .closest('tr').querySelector('td:nth-child(4)');
+                        .closest('tr').querySelector('td:nth-child(5)');
                     stockCell.textContent = update.stock;
 
                     if (data.warning && data.warning.message) {  // Modified line
