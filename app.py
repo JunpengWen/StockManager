@@ -1,7 +1,7 @@
 from collections import defaultdict
 from itertools import groupby
 
-from flask import Flask, render_template, request, redirect, url_for, jsonify, session, flash
+from flask import Flask, render_template, request, redirect, url_for, jsonify, session, flash, abort
 import sqlite3
 import os
 from flask import send_file
@@ -9,7 +9,8 @@ from reportlab.lib.pagesizes import letter
 from reportlab.pdfgen import canvas
 from werkzeug.routing import ValidationError
 from werkzeug.utils import secure_filename
-
+from apscheduler.schedulers.background import BackgroundScheduler
+from datetime import datetime, timedelta
 
 app = Flask(__name__)
 app.secret_key = 'your_secret_key'  # Required for flashing messages
@@ -29,6 +30,9 @@ ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg', 'gif'}  # Allowed file extensions
 # Configure the Flask app
 app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
 app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024  # Limit file size to 16MB
+
+# Add after app configuration
+scheduler = BackgroundScheduler(daemon=True)
 
 # Ensure the upload folder exists
 if not os.path.exists(UPLOAD_FOLDER):
@@ -56,6 +60,7 @@ def init_db():
             print("Added 'is_authorized' column.")
         except sqlite3.OperationalError:
             print("'is_authorized' column already exists.")
+
 
         # Create tables with proper store_address fields
         cursor.execute('''CREATE TABLE IF NOT EXISTS items (
@@ -95,12 +100,14 @@ def init_db():
             item_id INTEGER NOT NULL,
             stock_before INTEGER NOT NULL,
             stock_after INTEGER NOT NULL,
-            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP DEFAULT (datetime('now', 'localtime')),
             store_address TEXT NOT NULL,  -- Track store context
             FOREIGN KEY (user_id) REFERENCES users(id),
             FOREIGN KEY (item_id) REFERENCES items(id)
         )''')
 
+        cursor.execute('''CREATE INDEX IF NOT EXISTS idx_stock_updates_updated_at 
+                       ON stock_updates(updated_at)''')
         # Default data setup
         cursor.execute('INSERT OR IGNORE INTO categories (name) VALUES (?)', ("Default",))
 
@@ -1421,6 +1428,57 @@ def logout():
     session.clear()  # Clear all session data
     return redirect(url_for('login'))
 
+@app.before_request
+def check_scheduler():
+    if not scheduler.running:
+        app.logger.critical("Scheduler not running!")
+        scheduler.start()
+
+def cleanup_stock_history():
+    try:
+        with get_db_connection() as conn:
+            cursor = conn.cursor()
+            conn.execute('BEGIN IMMEDIATE')
+
+            # Get pre-cleanup metrics
+            cursor.execute('''SELECT COUNT(*) FROM stock_updates''')
+            initial_count = cursor.fetchone()[0]
+
+            # Delete records older than 30 days using SQLite's time
+            cursor.execute('''
+                DELETE FROM stock_updates
+                WHERE updated_at < datetime('now', '-30 days', 'localtime')
+            ''')
+
+            # Get cleanup metrics
+            deleted_count = cursor.rowcount
+            cursor.execute('''SELECT COUNT(*) FROM stock_updates''')
+            remaining_count = cursor.fetchone()[0]
+
+            conn.commit()
+
+            app.logger.info(
+                f"30-day cleanup completed. Removed {deleted_count} entries. "
+                f"Initial: {initial_count}, Remaining: {remaining_count}"
+            )
+
+    except sqlite3.Error as e:
+        app.logger.error(f"Database error during 30-day cleanup: {str(e)}")
+        conn.rollback()
+    except Exception as e:
+        app.logger.error(f"Unexpected error in 30-day cleanup: {str(e)}")
+        conn.rollback()
+
+# Configure scheduler to run daily at 2 AM
+scheduler.add_job(
+    cleanup_stock_history,
+    'cron',
+    hour=2,
+    minute=0,
+    max_instances=1,
+    coalesce=True,
+    misfire_grace_time=3600  # 1 hour grace period
+)
 
 @app.before_request
 def check_authorization():
