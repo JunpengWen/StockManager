@@ -314,7 +314,6 @@
                                                 <th>Before</th>
                                                 <th>After</th>
                                                 <th>Δ Change</th>
-                                                <th>Action</th>
                                             </tr>
                                         </thead>
                                         <tbody>
@@ -330,14 +329,7 @@
                         : 'text-danger'}">
                                                         ${record.stock_after - record.stock_before}
                                                     </td>
-                                                    <td>
-                                                        <button class="btn btn-danger btn-sm delete-btn"
-                                                                onclick="deleteHistoryRecord(${record.id})">
-                                                            <i class="bi bi-trash"></i>
-                                                            <!-- 添加文字标签 -->
-                                                            <span class="ms-1 d-none d-sm-inline">Delete</span>
-                                                        </button>
-                                                    </td>
+                                                    
                                                 </tr>
                                             `
             ).
