@@ -172,7 +172,8 @@ def login():
                     'role': user['role'],
                     'store_address': user['store_address'],
                     'authorized': True,
-                    '_csrf_validated': True  # Explicit CSRF validation marker
+                    '_csrf_validated': True,  # Explicit CSRF validation marker
+                    'username': username
                 })
 
                 # Debug log
@@ -542,7 +543,8 @@ def employee_dashboard():
 
     return render_template('employee_dashboard.html',
                            items=items,
-                           current_store=current_store  # Add this
+                           current_store=current_store,
+                           username = session.get('username')
                            )
 
 
